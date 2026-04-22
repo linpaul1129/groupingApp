@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -166,29 +167,48 @@ class _MatchScreenState extends State<MatchScreen> {
   }
 
   Widget _buildMatchPanel() {
-    return ListView(
-      padding: const EdgeInsets.all(12),
-      children: [
-        _sectionTitle('比賽場地'),
-        for (var i = 0; i < _courts.length; i++)
-          CourtCard(
-            title: 'Court ${i + 1}',
-            courtIndex: i,
-            players: _courts[i],
-            state: _states[i],
-            lastScore: _lastScores[i],
-            onStart: () => _startCourt(i),
-            onFinish: () => _finishCourt(i),
-            onSwap: (from, toPlayer) => _handleSwap(
-              from: from,
-              targetCourtIndex: i,
-              targetPlayer: toPlayer,
-            ),
-          ),
-        const SizedBox(height: 8),
-        _sectionTitle('等待區（${_waiting.length} 人）'),
-        _buildWaitingArea(),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final sideBySide = _courts.length >= 2;
+        return ListView(
+          padding: const EdgeInsets.all(12),
+          children: [
+            _sectionTitle('比賽場地'),
+            if (sideBySide)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (var i = 0; i < _courts.length; i++) ...[
+                    if (i > 0) const SizedBox(width: 8),
+                    Expanded(child: _buildCourtCard(i)),
+                  ],
+                ],
+              )
+            else
+              for (var i = 0; i < _courts.length; i++) _buildCourtCard(i),
+            const SizedBox(height: 8),
+            _sectionTitle('等待區（${_waiting.length} 人）'),
+            _buildWaitingArea(),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildCourtCard(int i) {
+    return CourtCard(
+      title: 'Court ${i + 1}',
+      courtIndex: i,
+      players: _courts[i],
+      state: _states[i],
+      lastScore: _lastScores[i],
+      onStart: () => _startCourt(i),
+      onFinish: () => _finishCourt(i),
+      onSwap: (from, toPlayer) => _handleSwap(
+        from: from,
+        targetCourtIndex: i,
+        targetPlayer: toPlayer,
+      ),
     );
   }
 
@@ -223,13 +243,23 @@ class _MatchScreenState extends State<MatchScreen> {
     if (!canDrag) return chip;
 
     final handle = PlayerDragHandle(player: p, courtIndex: null);
-    final draggable = LongPressDraggable<PlayerDragHandle>(
-      data: handle,
-      delay: const Duration(milliseconds: 200),
-      feedback: Material(color: Colors.transparent, child: chip),
-      childWhenDragging: Opacity(opacity: 0.3, child: chip),
-      child: chip,
-    );
+    final feedback = Material(color: Colors.transparent, child: chip);
+    final childWhenDragging = Opacity(opacity: 0.3, child: chip);
+    // Web 上改用 Draggable（即拖即起），見 court_card.dart 內說明。
+    final Widget draggable = kIsWeb
+        ? Draggable<PlayerDragHandle>(
+            data: handle,
+            feedback: feedback,
+            childWhenDragging: childWhenDragging,
+            child: chip,
+          )
+        : LongPressDraggable<PlayerDragHandle>(
+            data: handle,
+            delay: const Duration(milliseconds: 200),
+            feedback: feedback,
+            childWhenDragging: childWhenDragging,
+            child: chip,
+          );
     return DragTarget<PlayerDragHandle>(
       onWillAcceptWithDetails: (details) =>
           details.data.player.id != p.id && !details.data.fromWaiting,

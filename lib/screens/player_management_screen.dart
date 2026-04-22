@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 
 import '../models/player.dart';
@@ -226,10 +224,8 @@ class _PlayerEditorDialogState extends State<_PlayerEditorDialog> {
   }
 
   Widget _buildAvatarPicker() {
-    final hasAvatar =
-        _avatarPath != null &&
-        _avatarPath!.isNotEmpty &&
-        File(_avatarPath!).existsSync();
+    final image = avatarImageProvider(_avatarPath);
+    final hasAvatar = image != null;
 
     return Column(
       children: [
@@ -243,11 +239,20 @@ class _PlayerEditorDialogState extends State<_PlayerEditorDialog> {
                 backgroundColor: Theme.of(
                   context,
                 ).colorScheme.surfaceContainerHighest,
-                backgroundImage: hasAvatar
-                    ? FileImage(File(_avatarPath!))
-                    : null,
                 child: hasAvatar
-                    ? null
+                    ? ClipOval(
+                        child: Image(
+                          image: image!,
+                          width: 84,
+                          height: 84,
+                          fit: BoxFit.cover,
+                          errorBuilder:
+                              (_, __, ___) => const Icon(
+                                Icons.broken_image_outlined,
+                                size: 28,
+                              ),
+                        ),
+                      )
                     : const Icon(Icons.add_a_photo_outlined, size: 28),
               ),
               if (_picking)

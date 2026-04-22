@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../models/court_score.dart';
@@ -134,16 +135,27 @@ class CourtCard extends StatelessWidget {
     if (state != CourtState.pending) return slot;
 
     final dragHandle = PlayerDragHandle(player: player, courtIndex: courtIndex);
-    final draggable = LongPressDraggable<PlayerDragHandle>(
-      data: dragHandle,
-      delay: const Duration(milliseconds: 200),
-      feedback: Material(
-        color: Colors.transparent,
-        child: Transform.scale(scale: 1.1, child: _CourtPlayer(player: player)),
-      ),
-      childWhenDragging: Opacity(opacity: 0.3, child: slot),
-      child: slot,
+    final feedback = Material(
+      color: Colors.transparent,
+      child: Transform.scale(scale: 1.1, child: _CourtPlayer(player: player)),
     );
+    final childWhenDragging = Opacity(opacity: 0.3, child: slot);
+    // Web 上滑鼠操作沒有「長按」概念，LongPressDraggable 會與 ListView 滾動搶
+    // 手勢導致拖不起來；native 則保留長按避免行動裝置誤觸。
+    final Widget draggable = kIsWeb
+        ? Draggable<PlayerDragHandle>(
+            data: dragHandle,
+            feedback: feedback,
+            childWhenDragging: childWhenDragging,
+            child: slot,
+          )
+        : LongPressDraggable<PlayerDragHandle>(
+            data: dragHandle,
+            delay: const Duration(milliseconds: 200),
+            feedback: feedback,
+            childWhenDragging: childWhenDragging,
+            child: slot,
+          );
 
     return DragTarget<PlayerDragHandle>(
       onWillAcceptWithDetails: (details) => details.data.player.id != player.id,

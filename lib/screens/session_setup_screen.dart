@@ -89,21 +89,31 @@ class _SessionSetupScreenState extends State<SessionSetupScreen> {
   Widget _buildCourtSelector(int selectedCount) {
     // 選 1 場地若當前已超過 8 人會先被阻擋；選 2 場地永遠可用。
     final canPickOne = selectedCount <= (_maxByCourts[1] ?? 8);
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Text('場地數：'),
-        const SizedBox(width: 8),
-        SegmentedButton<int>(
-          segments: [
-            ButtonSegment(
-              value: 1,
-              label: const Text('1 場地（上限 8）'),
-              enabled: canPickOne,
-            ),
-            const ButtonSegment(value: 2, label: Text('2 場地（上限 14）')),
-          ],
-          selected: {_preferredCourts},
-          onSelectionChanged: (s) => setState(() => _preferredCourts = s.first),
+        Text('場地數', style: Theme.of(context).textTheme.titleSmall),
+        const SizedBox(height: 6),
+        SizedBox(
+          width: double.infinity,
+          child: SegmentedButton<int>(
+            segments: [
+              ButtonSegment(
+                value: 1,
+                label: const Text('1 場地'),
+                icon: const Icon(Icons.looks_one_outlined),
+                enabled: canPickOne,
+              ),
+              const ButtonSegment(
+                value: 2,
+                label: Text('2 場地'),
+                icon: Icon(Icons.looks_two_outlined),
+              ),
+            ],
+            selected: {_preferredCourts},
+            onSelectionChanged: (s) =>
+                setState(() => _preferredCourts = s.first),
+          ),
         ),
       ],
     );
