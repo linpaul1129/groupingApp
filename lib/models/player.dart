@@ -46,6 +46,9 @@ class Player {
   /// 預留：備註欄。
   String notes;
 
+  /// 勝率（0.0 ~ 1.0）；尚未上場時為 0。
+  double get winRate => gamesPlayed == 0 ? 0.0 : wins / gamesPlayed;
+
   Player copyWith({
     String? name,
     PlayerType? type,

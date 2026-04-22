@@ -57,6 +57,8 @@ class _SessionSetupScreenState extends State<SessionSetupScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _buildCourtSelector(selectedCount),
+            const SizedBox(height: 8),
+            _buildBalanceToggle(),
             const SizedBox(height: 12),
             _buildStatusBanner(selectedCount, resolvedCourts),
             const SizedBox(height: 12),
@@ -116,6 +118,19 @@ class _SessionSetupScreenState extends State<SessionSetupScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildBalanceToggle() {
+    return SwitchListTile(
+      contentPadding: EdgeInsets.zero,
+      title: const Text('勝率平衡分組'),
+      subtitle: const Text('依個人勝率自動調整隊伍搭配'),
+      value: widget.repository.balanceByWinRate,
+      onChanged: (v) async {
+        await widget.repository.setBalanceByWinRate(v);
+        if (mounted) setState(() {});
+      },
     );
   }
 

@@ -292,6 +292,7 @@ class _MatchScreenState extends State<MatchScreen> {
     final session = _matchMaker.startSession(
       roster: roster,
       preferredCourts: widget.repository.preferredCourts,
+      balanceByWinRate: widget.repository.balanceByWinRate,
     );
     await widget.repository.setCurrentRound(1);
     setState(() {
@@ -392,7 +393,11 @@ class _MatchScreenState extends State<MatchScreen> {
 
     // 3) 候選池 = 剛下場 + 原等待者；挑 4 人上新場地
     final pool = [...justFinished, ...bumpedWaiting];
-    final newPlaying = _matchMaker.pickPlayers(pool, 4);
+    final newPlaying = _matchMaker.pickPlayers(
+      pool,
+      4,
+      balanceByWinRate: widget.repository.balanceByWinRate,
+    );
     final newPlayingIds = newPlaying.map((p) => p.id).toSet();
     final newWaiting = pool
         .where((p) => !newPlayingIds.contains(p.id))

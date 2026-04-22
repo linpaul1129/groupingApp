@@ -16,6 +16,7 @@ class PlayerRepository extends ChangeNotifier {
   static const String _currentRoundKey = 'current_round';
   static const String _preferredCourtsKey = 'preferred_courts';
   static const String _rosterKey = 'active_roster_ids';
+  static const String _balanceByWinRateKey = 'balance_by_win_rate';
 
   final Box<Player> _playerBox;
   final Box _metaBox;
@@ -94,6 +95,15 @@ class PlayerRepository extends ChangeNotifier {
 
   Future<void> saveActiveRoster(List<String> ids) async {
     await _metaBox.put(_rosterKey, ids);
+    notifyListeners();
+  }
+
+  /// 是否啟用「勝率平衡分組」。
+  bool get balanceByWinRate =>
+      _metaBox.get(_balanceByWinRateKey, defaultValue: false) as bool;
+
+  Future<void> setBalanceByWinRate(bool value) async {
+    await _metaBox.put(_balanceByWinRateKey, value);
     notifyListeners();
   }
 

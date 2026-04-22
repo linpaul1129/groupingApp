@@ -38,8 +38,20 @@ class MatchMaker {
   /// 再以 waitingRounds 由大到小做穩定排序；取前 needed 位。
   ///
   /// 公開版本：供 [MatchScreen] 在「每場結束即補人」的流程中直接呼叫。
-  List<Player> pickPlayers(List<Player> candidates, int needed) =>
-      _pickPlayers(candidates, needed);
+  ///
+  /// 若 [balanceByWinRate] 為 true 且 [needed] 為 4 的倍數，會在選完後
+  /// 將每 4 人依勝率重排成 `[隊A a0, 隊A a1, 隊B b0, 隊B b1]` 的順序。
+  List<Player> pickPlayers(
+    List<Player> candidates,
+    int needed, {
+    bool balanceByWinRate = false,
+  }) {
+    final picked = _pickPlayers(candidates, needed);
+    if (!balanceByWinRate || needed == 0 || needed % playersPerCourt != 0) {
+      return picked;
+    }
+    return _rebalanceCourts(picked, needed ~/ playersPerCourt);
+  }
 
   /// 初始化活動：從 [roster] 挑出第一批上場者並切分到場地。
   ///
@@ -49,6 +61,7 @@ class MatchMaker {
   ({List<List<Player>> courts, List<Player> waiting}) startSession({
     required List<Player> roster,
     required int preferredCourts,
+    bool balanceByWinRate = false,
   }) {
     final courtsCount = resolvedCourts(roster.length, preferredCourts);
     if (courtsCount == 0) {
@@ -56,7 +69,10 @@ class MatchMaker {
     }
     final needed = courtsCount * playersPerCourt;
     final picked = _pickPlayers(roster, needed);
-    final courts = _splitIntoCourts(picked, courtsCount);
+    final arranged = balanceByWinRate
+        ? _rebalanceCourts(picked, courtsCount)
+        : picked;
+    final courts = _splitIntoCourts(arranged, courtsCount);
     final pickedIds = picked.map((p) => p.id).toSet();
     final waiting = roster
         .where((p) => !pickedIds.contains(p.id))
@@ -191,5 +207,45 @@ class MatchMaker {
       result.add(picked.sublist(start, start + playersPerCourt));
     }
     return result;
+  }
+
+  /// 將每 4 人一組依勝率重排為平衡分隊。回傳扁平的 `List<Player>`，
+  /// 每 4 人的順序為 `[隊A a0, 隊A a1, 隊B b0, 隊B b1]`，與既有
+  /// `CourtCard` 的 team 切割約定一致。
+  List<Player> _rebalanceCourts(List<Player> picked, int courts) {
+    final out = <Player>[];
+    for (var c = 0; c < courts; c++) {
+      final start = c * playersPerCourt;
+      final four = picked.sublist(start, start + playersPerCourt);
+      final teams = _balancedTeams(four);
+      out.addAll([...teams[0], ...teams[1]]);
+    }
+    return List<Player>.unmodifiable(out);
+  }
+
+  /// 對 4 位玩家枚舉 3 種不重複的 2v2 分法，選出兩隊總勝率差最小者。
+  /// 回傳 `[隊A, 隊B]`。
+  List<List<Player>> _balancedTeams(List<Player> four) {
+    assert(four.length == playersPerCourt, '_balancedTeams 需要 4 位玩家');
+    const pairings = <List<List<int>>>[
+      [[0, 1], [2, 3]],
+      [[0, 2], [1, 3]],
+      [[0, 3], [1, 2]],
+    ];
+    var bestDiff = double.infinity;
+    List<List<int>> bestPair = pairings.first;
+    for (final pair in pairings) {
+      final a = four[pair[0][0]].winRate + four[pair[0][1]].winRate;
+      final b = four[pair[1][0]].winRate + four[pair[1][1]].winRate;
+      final diff = (a - b).abs();
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        bestPair = pair;
+      }
+    }
+    return [
+      [four[bestPair[0][0]], four[bestPair[0][1]]],
+      [four[bestPair[1][0]], four[bestPair[1][1]]],
+    ];
   }
 }

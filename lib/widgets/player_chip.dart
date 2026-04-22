@@ -43,7 +43,9 @@ class PlayerChip extends StatelessWidget {
           if (showStats) ...[
             const SizedBox(width: 6),
             Text(
-              '${player.gamesPlayed}場·等${player.waitingRounds}',
+              player.gamesPlayed == 0
+                  ? '${player.gamesPlayed}場'
+                  : '${player.gamesPlayed}場·勝${(player.winRate * 100).toStringAsFixed(0)}%',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
