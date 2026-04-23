@@ -152,11 +152,10 @@ class _MatchScreenState extends State<MatchScreen> {
           Expanded(
             child: SingleChildScrollView(
               child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
+                spacing: 10,
+                runSpacing: 10,
                 children: [
-                  for (final p in roster)
-                    PlayerChip(player: p, showStats: true),
+                  for (final p in roster) PlayerStatCard(player: p),
                 ],
               ),
             ),
@@ -229,8 +228,8 @@ class _MatchScreenState extends State<MatchScreen> {
     return Padding(
       padding: const EdgeInsets.all(8),
       child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
+        spacing: 10,
+        runSpacing: 10,
         children: [
           for (final p in _waiting) _buildWaitingChip(p, canDrag: canDrag),
         ],
@@ -239,26 +238,26 @@ class _MatchScreenState extends State<MatchScreen> {
   }
 
   Widget _buildWaitingChip(Player p, {required bool canDrag}) {
-    final chip = PlayerChip(player: p, showStats: true);
-    if (!canDrag) return chip;
+    final card = PlayerStatCard(player: p);
+    if (!canDrag) return card;
 
     final handle = PlayerDragHandle(player: p, courtIndex: null);
-    final feedback = Material(color: Colors.transparent, child: chip);
-    final childWhenDragging = Opacity(opacity: 0.3, child: chip);
+    final feedback = Material(color: Colors.transparent, child: card);
+    final childWhenDragging = Opacity(opacity: 0.3, child: card);
     // Web 上改用 Draggable（即拖即起），見 court_card.dart 內說明。
     final Widget draggable = kIsWeb
         ? Draggable<PlayerDragHandle>(
             data: handle,
             feedback: feedback,
             childWhenDragging: childWhenDragging,
-            child: chip,
+            child: card,
           )
         : LongPressDraggable<PlayerDragHandle>(
             data: handle,
             delay: const Duration(milliseconds: 200),
             feedback: feedback,
             childWhenDragging: childWhenDragging,
-            child: chip,
+            child: card,
           );
     return DragTarget<PlayerDragHandle>(
       onWillAcceptWithDetails: (details) =>
@@ -273,7 +272,7 @@ class _MatchScreenState extends State<MatchScreen> {
         return AnimatedContainer(
           duration: const Duration(milliseconds: 120),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(12),
             border: highlighted
                 ? Border.all(color: Colors.yellow.shade600, width: 2)
                 : null,
