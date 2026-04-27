@@ -59,6 +59,8 @@ class _SessionSetupScreenState extends State<SessionSetupScreen> {
             _buildCourtSelector(selectedCount),
             const SizedBox(height: 8),
             _buildBalanceToggle(),
+            const SizedBox(height: 4),
+            _buildLiveScoringToggle(),
             const SizedBox(height: 12),
             _buildStatusBanner(selectedCount, resolvedCourts),
             const SizedBox(height: 12),
@@ -129,6 +131,19 @@ class _SessionSetupScreenState extends State<SessionSetupScreen> {
       value: widget.repository.balanceByWinRate,
       onChanged: (v) async {
         await widget.repository.setBalanceByWinRate(v);
+        if (mounted) setState(() {});
+      },
+    );
+  }
+
+  Widget _buildLiveScoringToggle() {
+    return SwitchListTile(
+      contentPadding: EdgeInsets.zero,
+      title: const Text('實時計分'),
+      subtitle: const Text('比賽中即時加減分，結束時直接採用'),
+      value: widget.repository.liveScoring,
+      onChanged: (v) async {
+        await widget.repository.setLiveScoring(v);
         if (mounted) setState(() {});
       },
     );

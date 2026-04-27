@@ -22,6 +22,9 @@ class CourtCard extends StatelessWidget {
     this.lastScore,
     this.onStart,
     this.onFinish,
+    this.liveScore,
+    this.onIncrementScore,
+    this.onDecrementScore,
     this.onSwap,
     this.preview = false,
   }) : assert(players.length == 4, 'CourtCard 需要 4 位玩家');
@@ -36,6 +39,15 @@ class CourtCard extends StatelessWidget {
 
   final VoidCallback? onStart;
   final VoidCallback? onFinish;
+
+  /// 實時比分（null 代表非實時模式）。
+  final (int, int)? liveScore;
+
+  /// 實時計分 +1：team 0=隊A、1=隊B。
+  final void Function(int team)? onIncrementScore;
+
+  /// 實時計分 -1：team 0=隊A、1=隊B。
+  final void Function(int team)? onDecrementScore;
 
   /// 玩家拖拉互換：`from` 為被拖動的來源、`toPlayerOnThisCourt` 為本場被放上的玩家。
   final void Function(PlayerDragHandle from, Player toPlayerOnThisCourt)?
@@ -187,16 +199,74 @@ class CourtCard extends StatelessWidget {
     }
     // playing
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (liveScore != null) ...[
+          _buildLiveScoreBar(context, liveScore!),
+          const SizedBox(height: 8),
+        ],
         FilledButton.tonalIcon(
           icon: const Icon(Icons.flag_outlined),
-          label: const Text('結束本場並輸入比分'),
+          label: Text(liveScore != null ? '結束本場' : '結束本場並輸入比分'),
           onPressed: onFinish,
         ),
         if (lastScore != null) ...[
           const SizedBox(height: 6),
           _buildLastScoreLine(context, lastScore!),
         ],
+      ],
+    );
+  }
+
+  Widget _buildLiveScoreBar(BuildContext context, (int, int) score) {
+    final (a, b) = score;
+    return Row(
+      children: [
+        Expanded(child: _buildScoreColumn(context, '隊 A', a, 0)),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Text(':', style: Theme.of(context).textTheme.headlineMedium),
+        ),
+        Expanded(child: _buildScoreColumn(context, '隊 B', b, 1)),
+      ],
+    );
+  }
+
+  Widget _buildScoreColumn(
+    BuildContext context,
+    String label,
+    int score,
+    int team,
+  ) {
+    return Column(
+      children: [
+        Text(label, style: Theme.of(context).textTheme.labelMedium),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.remove_circle_outline),
+              onPressed: score > 0 && onDecrementScore != null
+                  ? () => onDecrementScore!(team)
+                  : null,
+            ),
+            SizedBox(
+              width: 40,
+              child: Text(
+                '$score',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.add_circle_outline),
+              onPressed:
+                  onIncrementScore != null ? () => onIncrementScore!(team) : null,
+            ),
+          ],
+        ),
       ],
     );
   }
@@ -210,6 +280,7 @@ class CourtCard extends StatelessWidget {
     return Text(
       '上一場：${s.teamAScore} : ${s.teamBScore}（$winner）',
       style: Theme.of(context).textTheme.bodySmall,
+      textAlign: TextAlign.center,
     );
   }
 }

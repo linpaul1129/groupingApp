@@ -41,16 +41,23 @@ class MatchMaker {
   ///
   /// 若 [balanceByWinRate] 為 true 且 [needed] 為 4 的倍數，會在選完後
   /// 將每 4 人依勝率重排成 `[隊A a0, 隊A a1, 隊B b0, 隊B b1]` 的順序。
+  ///
+  /// [lastTeammates] 提供上一局的隊友關係（player id → 隊友 id），用於
+  /// 避免同一組合重複出現；即使 [balanceByWinRate] 為 false 也會套用。
   List<Player> pickPlayers(
     List<Player> candidates,
     int needed, {
     bool balanceByWinRate = false,
+    Map<String, String?> lastTeammates = const {},
   }) {
     final picked = _pickPlayers(candidates, needed);
-    if (!balanceByWinRate || needed == 0 || needed % playersPerCourt != 0) {
-      return picked;
-    }
-    return _rebalanceCourts(picked, needed ~/ playersPerCourt);
+    if (needed == 0 || needed % playersPerCourt != 0) return picked;
+    if (!balanceByWinRate && lastTeammates.isEmpty) return picked;
+    return _rebalanceCourts(
+      picked,
+      needed ~/ playersPerCourt,
+      lastTeammates: lastTeammates,
+    );
   }
 
   /// 初始化活動：從 [roster] 挑出第一批上場者並切分到場地。
@@ -132,6 +139,7 @@ class MatchMaker {
   }
 
   /// 將 [result] 的結果套用到 [roster]（in-place 修改）。
+
   ///
   /// - 上場：waitingRounds=0、gamesPlayed+=1、lastPlayedRound=roundNumber；
   ///   若對應的 [scores] 有勝隊，勝隊兩位玩家的 wins 也 +1。
@@ -212,34 +220,48 @@ class MatchMaker {
   /// 將每 4 人一組依勝率重排為平衡分隊。回傳扁平的 `List<Player>`，
   /// 每 4 人的順序為 `[隊A a0, 隊A a1, 隊B b0, 隊B b1]`，與既有
   /// `CourtCard` 的 team 切割約定一致。
-  List<Player> _rebalanceCourts(List<Player> picked, int courts) {
+  List<Player> _rebalanceCourts(
+    List<Player> picked,
+    int courts, {
+    Map<String, String?> lastTeammates = const {},
+  }) {
     final out = <Player>[];
     for (var c = 0; c < courts; c++) {
       final start = c * playersPerCourt;
       final four = picked.sublist(start, start + playersPerCourt);
-      final teams = _balancedTeams(four);
+      final teams = _balancedTeams(four, lastTeammates: lastTeammates);
       out.addAll([...teams[0], ...teams[1]]);
     }
     return List<Player>.unmodifiable(out);
   }
 
-  /// 對 4 位玩家枚舉 3 種不重複的 2v2 分法，選出兩隊總勝率差最小者。
+  /// 對 4 位玩家枚舉 3 種不重複的 2v2 分法，選出分數最低者。
+  ///
+  /// 分數 = 兩隊勝率差 + 重複懲罰（若任一組隊友與上局相同加 3.0）。
+  /// 懲罰值 > 最大可能勝率差 (2.0)，確保「換隊友」優先於「平衡勝率」。
   /// 回傳 `[隊A, 隊B]`。
-  List<List<Player>> _balancedTeams(List<Player> four) {
+  List<List<Player>> _balancedTeams(
+    List<Player> four, {
+    Map<String, String?> lastTeammates = const {},
+  }) {
     assert(four.length == playersPerCourt, '_balancedTeams 需要 4 位玩家');
     const pairings = <List<List<int>>>[
       [[0, 1], [2, 3]],
       [[0, 2], [1, 3]],
       [[0, 3], [1, 2]],
     ];
-    var bestDiff = double.infinity;
+    var bestScore = double.infinity;
     List<List<int>> bestPair = pairings.first;
     for (final pair in pairings) {
       final a = four[pair[0][0]].winRate + four[pair[0][1]].winRate;
       final b = four[pair[1][0]].winRate + four[pair[1][1]].winRate;
-      final diff = (a - b).abs();
-      if (diff < bestDiff) {
-        bestDiff = diff;
+      double score = (a - b).abs();
+      if (_wereTeammates(four[pair[0][0]], four[pair[0][1]], lastTeammates) ||
+          _wereTeammates(four[pair[1][0]], four[pair[1][1]], lastTeammates)) {
+        score += 3.0;
+      }
+      if (score < bestScore) {
+        bestScore = score;
         bestPair = pair;
       }
     }
@@ -247,5 +269,13 @@ class MatchMaker {
       [four[bestPair[0][0]], four[bestPair[0][1]]],
       [four[bestPair[1][0]], four[bestPair[1][1]]],
     ];
+  }
+
+  bool _wereTeammates(
+    Player a,
+    Player b,
+    Map<String, String?> lastTeammates,
+  ) {
+    return lastTeammates[a.id] == b.id || lastTeammates[b.id] == a.id;
   }
 }

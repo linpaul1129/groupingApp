@@ -38,6 +38,16 @@ class _MatchScreenState extends State<MatchScreen> {
   /// 內部事件序號，用於紀錄 Player.lastPlayedRound。
   int _eventCounter = 0;
 
+  /// 每個場地的實時比分（teamA, teamB）；非實時模式下也維護，切換模式時不重置。
+  List<(int, int)> _liveScores = [];
+
+  /// 上一局上場的玩家 ID，用於偵測兩組固定輪替並觸發重新洗牌。
+  Set<String> _lastPlayedIds = {};
+
+  /// 上一局的隊友關係：player id → 隊友 id。
+  /// 跨局保留，用於避免同一隊伍組合重複出現。
+  Map<String, String?> _lastTeammates = {};
+
   bool get _started => _courts.isNotEmpty;
 
   @override
@@ -195,12 +205,16 @@ class _MatchScreenState extends State<MatchScreen> {
   }
 
   Widget _buildCourtCard(int i) {
+    final isLive = widget.repository.liveScoring;
     return CourtCard(
       title: 'Court ${i + 1}',
       courtIndex: i,
       players: _courts[i],
       state: _states[i],
       lastScore: _lastScores[i],
+      liveScore: isLive ? _liveScores[i] : null,
+      onIncrementScore: isLive ? (team) => _changeScore(i, team, 1) : null,
+      onDecrementScore: isLive ? (team) => _changeScore(i, team, -1) : null,
       onStart: () => _startCourt(i),
       onFinish: () => _finishCourt(i),
       onSwap: (from, toPlayer) => _handleSwap(
@@ -209,6 +223,17 @@ class _MatchScreenState extends State<MatchScreen> {
         targetPlayer: toPlayer,
       ),
     );
+  }
+
+  void _changeScore(int courtIndex, int team, int delta) {
+    setState(() {
+      final (a, b) = _liveScores[courtIndex];
+      if (team == 0) {
+        _liveScores[courtIndex] = ((a + delta).clamp(0, 99), b);
+      } else {
+        _liveScores[courtIndex] = (a, (b + delta).clamp(0, 99));
+      }
+    });
   }
 
   Widget _sectionTitle(String text) => Padding(
@@ -301,13 +326,19 @@ class _MatchScreenState extends State<MatchScreen> {
         CourtState.pending,
       );
       _lastScores = List<CourtScore?>.filled(session.courts.length, null);
+      _liveScores = [for (var _ in session.courts) (0, 0)];
       _waiting = List<Player>.of(session.waiting);
       _eventCounter = 0;
+      _lastPlayedIds = {};
+      _lastTeammates = {};
     });
   }
 
   void _startCourt(int courtIndex) {
-    setState(() => _states[courtIndex] = CourtState.playing);
+    setState(() {
+      _states[courtIndex] = CourtState.playing;
+      _liveScores[courtIndex] = (0, 0);
+    });
   }
 
   /// 拖拉互換：把 [from]（場地或等待區玩家）與 [targetPlayer]（場地 / 等待區）對調。
@@ -359,14 +390,34 @@ class _MatchScreenState extends State<MatchScreen> {
     final teamA = court.sublist(0, 2);
     final teamB = court.sublist(2, 4);
 
-    final score = await showDialog<CourtScore>(
-      context: context,
-      builder: (ctx) => _ScoreInputDialog(teamA: teamA, teamB: teamB),
-    );
-    if (score == null) return;
+    final CourtScore? score;
+    if (widget.repository.liveScoring) {
+      final (a, b) = _liveScores[courtIndex];
+      if (a == b) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('比分相同，無法判定勝負，請繼續計分')),
+          );
+        }
+        return;
+      }
+      score = CourtScore(teamAScore: a, teamBScore: b);
+    } else {
+      score = await showDialog<CourtScore>(
+        context: context,
+        builder: (ctx) => _ScoreInputDialog(teamA: teamA, teamB: teamB),
+      );
+      if (score == null) return;
+    }
 
     _eventCounter++;
     final roundId = _eventCounter;
+
+    // 0) 記錄本局隊友，供下一局分組時避免重複
+    _lastTeammates[court[0].id] = court[1].id;
+    _lastTeammates[court[1].id] = court[0].id;
+    _lastTeammates[court[2].id] = court[3].id;
+    _lastTeammates[court[3].id] = court[2].id;
 
     // 1) 更新剛下場的 4 位：gamesPlayed+1、勝者 wins+1、waitingRounds=0、lastPlayedRound=roundId
     final winnerIds = switch (score.winningTeam) {
@@ -385,9 +436,18 @@ class _MatchScreenState extends State<MatchScreen> {
         )
         .toList();
 
-    // 2) 原等待區所有人 waitingRounds+1
+    // 2) 等待區玩家等待輪數處理：
+    //    若等待區的人與「上局上場者」完全相同，代表兩組固定輪替。
+    //    此時重置所有人的 waitingRounds 為 0，讓全體重新公平抽籤，產生新組合。
+    //    否則正常 waitingRounds +1。
+    final waitingIds = _waiting.map((p) => p.id).toSet();
+    final isCycleRepeat = _lastPlayedIds.isNotEmpty &&
+        waitingIds.length == _lastPlayedIds.length &&
+        waitingIds.containsAll(_lastPlayedIds);
     final bumpedWaiting = _waiting
-        .map((p) => p.copyWith(waitingRounds: p.waitingRounds + 1))
+        .map((p) => p.copyWith(
+              waitingRounds: isCycleRepeat ? 0 : p.waitingRounds + 1,
+            ))
         .toList();
 
     // 3) 候選池 = 剛下場 + 原等待者；挑 4 人上新場地
@@ -396,6 +456,7 @@ class _MatchScreenState extends State<MatchScreen> {
       pool,
       4,
       balanceByWinRate: widget.repository.balanceByWinRate,
+      lastTeammates: _lastTeammates,
     );
     final newPlayingIds = newPlaying.map((p) => p.id).toSet();
     final newWaiting = pool
@@ -410,7 +471,9 @@ class _MatchScreenState extends State<MatchScreen> {
       _courts[courtIndex] = newPlaying;
       _states[courtIndex] = CourtState.pending;
       _lastScores[courtIndex] = score;
+      _liveScores[courtIndex] = (0, 0);
       _waiting = newWaiting;
+      _lastPlayedIds = court.map((p) => p.id).toSet();
     });
   }
 
@@ -441,8 +504,11 @@ class _MatchScreenState extends State<MatchScreen> {
         _courts = [];
         _states = [];
         _lastScores = [];
+        _liveScores = [];
         _waiting = [];
         _eventCounter = 0;
+        _lastPlayedIds = {};
+        _lastTeammates = {};
       });
     }
   }

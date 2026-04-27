@@ -17,6 +17,7 @@ class PlayerRepository extends ChangeNotifier {
   static const String _preferredCourtsKey = 'preferred_courts';
   static const String _rosterKey = 'active_roster_ids';
   static const String _balanceByWinRateKey = 'balance_by_win_rate';
+  static const String _liveScoringKey = 'live_scoring';
 
   final Box<Player> _playerBox;
   final Box _metaBox;
@@ -104,6 +105,14 @@ class PlayerRepository extends ChangeNotifier {
 
   Future<void> setBalanceByWinRate(bool value) async {
     await _metaBox.put(_balanceByWinRateKey, value);
+    notifyListeners();
+  }
+
+  bool get liveScoring =>
+      _metaBox.get(_liveScoringKey, defaultValue: false) as bool;
+
+  Future<void> setLiveScoring(bool value) async {
+    await _metaBox.put(_liveScoringKey, value);
     notifyListeners();
   }
 
