@@ -242,11 +242,11 @@ class _PlayerEditorDialogState extends State<_PlayerEditorDialog> {
                 child: hasAvatar
                     ? ClipOval(
                         child: Image(
-                          image: image!,
+                          image: image,
                           width: 84,
                           height: 84,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
+                          errorBuilder: (_, _, _) =>
                               const Icon(Icons.broken_image_outlined, size: 28),
                         ),
                       )
