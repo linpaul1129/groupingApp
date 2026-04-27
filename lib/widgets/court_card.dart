@@ -262,8 +262,9 @@ class CourtCard extends StatelessWidget {
             ),
             IconButton(
               icon: const Icon(Icons.add_circle_outline),
-              onPressed:
-                  onIncrementScore != null ? () => onIncrementScore!(team) : null,
+              onPressed: onIncrementScore != null
+                  ? () => onIncrementScore!(team)
+                  : null,
             ),
           ],
         ),

@@ -246,11 +246,8 @@ class _PlayerEditorDialogState extends State<_PlayerEditorDialog> {
                           width: 84,
                           height: 84,
                           fit: BoxFit.cover,
-                          errorBuilder:
-                              (_, __, ___) => const Icon(
-                                Icons.broken_image_outlined,
-                                size: 28,
-                              ),
+                          errorBuilder: (_, __, ___) =>
+                              const Icon(Icons.broken_image_outlined, size: 28),
                         ),
                       )
                     : const Icon(Icons.add_a_photo_outlined, size: 28),

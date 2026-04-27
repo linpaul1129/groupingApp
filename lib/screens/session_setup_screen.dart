@@ -94,11 +94,11 @@ class _SessionSetupScreenState extends State<SessionSetupScreen> {
                   : GridView.builder(
                       gridDelegate:
                           const SliverGridDelegateWithMaxCrossAxisExtent(
-                        maxCrossAxisExtent: 100,
-                        crossAxisSpacing: 8,
-                        mainAxisSpacing: 8,
-                        childAspectRatio: 0.72,
-                      ),
+                            maxCrossAxisExtent: 100,
+                            crossAxisSpacing: 8,
+                            mainAxisSpacing: 8,
+                            childAspectRatio: 0.72,
+                          ),
                       itemCount: players.length,
                       itemBuilder: (context, index) =>
                           _buildPlayerCard(players[index]),
@@ -217,8 +217,9 @@ class _SessionSetupScreenState extends State<SessionSetupScreen> {
     final reachedCap = _selected.length >= _maxPlayers && !selected;
     final isGuest = p.type == PlayerType.guest;
 
-    final primaryColor =
-        isGuest ? Colors.orange : Theme.of(context).colorScheme.primary;
+    final primaryColor = isGuest
+        ? Colors.orange
+        : Theme.of(context).colorScheme.primary;
 
     final Color borderColor;
     final Color bgColor;
@@ -240,22 +241,19 @@ class _SessionSetupScreenState extends State<SessionSetupScreen> {
         onTap: reachedCap
             ? null
             : () => setState(() {
-                  if (selected) {
-                    _selected.remove(p.id);
-                  } else {
-                    _selected.add(p.id);
-                  }
-                }),
+                if (selected) {
+                  _selected.remove(p.id);
+                } else {
+                  _selected.add(p.id);
+                }
+              }),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
           padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
           decoration: BoxDecoration(
             color: bgColor,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: borderColor,
-              width: selected ? 2 : 1,
-            ),
+            border: Border.all(color: borderColor, width: selected ? 2 : 1),
             boxShadow: selected
                 ? [
                     BoxShadow(
@@ -296,10 +294,7 @@ class _SessionSetupScreenState extends State<SessionSetupScreen> {
                   const SizedBox(height: 3),
                   Text(
                     '${p.gamesPlayed} 場',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: Colors.grey.shade500,
-                    ),
+                    style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
                   ),
                   Text(
                     p.gamesPlayed == 0

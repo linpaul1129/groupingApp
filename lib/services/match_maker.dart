@@ -246,9 +246,18 @@ class MatchMaker {
   }) {
     assert(four.length == playersPerCourt, '_balancedTeams 需要 4 位玩家');
     const pairings = <List<List<int>>>[
-      [[0, 1], [2, 3]],
-      [[0, 2], [1, 3]],
-      [[0, 3], [1, 2]],
+      [
+        [0, 1],
+        [2, 3],
+      ],
+      [
+        [0, 2],
+        [1, 3],
+      ],
+      [
+        [0, 3],
+        [1, 2],
+      ],
     ];
     var bestScore = double.infinity;
     List<List<int>> bestPair = pairings.first;
@@ -271,11 +280,7 @@ class MatchMaker {
     ];
   }
 
-  bool _wereTeammates(
-    Player a,
-    Player b,
-    Map<String, String?> lastTeammates,
-  ) {
+  bool _wereTeammates(Player a, Player b, Map<String, String?> lastTeammates) {
     return lastTeammates[a.id] == b.id || lastTeammates[b.id] == a.id;
   }
 }

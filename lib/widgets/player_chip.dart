@@ -64,8 +64,9 @@ class PlayerStatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isGuest = player.type == PlayerType.guest;
-    final primary =
-        isGuest ? Colors.orange : Theme.of(context).colorScheme.primary;
+    final primary = isGuest
+        ? Colors.orange
+        : Theme.of(context).colorScheme.primary;
     final bg = isGuest
         ? Colors.orange.shade50
         : Theme.of(context).colorScheme.primaryContainer;

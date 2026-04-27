@@ -164,9 +164,7 @@ class _MatchScreenState extends State<MatchScreen> {
               child: Wrap(
                 spacing: 10,
                 runSpacing: 10,
-                children: [
-                  for (final p in roster) PlayerStatCard(player: p),
-                ],
+                children: [for (final p in roster) PlayerStatCard(player: p)],
               ),
             ),
           ),
@@ -217,11 +215,8 @@ class _MatchScreenState extends State<MatchScreen> {
       onDecrementScore: isLive ? (team) => _changeScore(i, team, -1) : null,
       onStart: () => _startCourt(i),
       onFinish: () => _finishCourt(i),
-      onSwap: (from, toPlayer) => _handleSwap(
-        from: from,
-        targetCourtIndex: i,
-        targetPlayer: toPlayer,
-      ),
+      onSwap: (from, toPlayer) =>
+          _handleSwap(from: from, targetCourtIndex: i, targetPlayer: toPlayer),
     );
   }
 
@@ -395,9 +390,9 @@ class _MatchScreenState extends State<MatchScreen> {
       final (a, b) = _liveScores[courtIndex];
       if (a == b) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('比分相同，無法判定勝負，請繼續計分')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('比分相同，無法判定勝負，請繼續計分')));
         }
         return;
       }
@@ -441,13 +436,16 @@ class _MatchScreenState extends State<MatchScreen> {
     //    此時重置所有人的 waitingRounds 為 0，讓全體重新公平抽籤，產生新組合。
     //    否則正常 waitingRounds +1。
     final waitingIds = _waiting.map((p) => p.id).toSet();
-    final isCycleRepeat = _lastPlayedIds.isNotEmpty &&
+    final isCycleRepeat =
+        _lastPlayedIds.isNotEmpty &&
         waitingIds.length == _lastPlayedIds.length &&
         waitingIds.containsAll(_lastPlayedIds);
     final bumpedWaiting = _waiting
-        .map((p) => p.copyWith(
-              waitingRounds: isCycleRepeat ? 0 : p.waitingRounds + 1,
-            ))
+        .map(
+          (p) => p.copyWith(
+            waitingRounds: isCycleRepeat ? 0 : p.waitingRounds + 1,
+          ),
+        )
         .toList();
 
     // 3) 候選池 = 剛下場 + 原等待者；挑 4 人上新場地
