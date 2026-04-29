@@ -50,68 +50,87 @@ class _SessionSetupScreenState extends State<SessionSetupScreen> {
       _preferredCourts,
     );
 
+    // 單張卡片高度 = maxCrossAxisExtent / childAspectRatio
+    const double cardHeight = 100 / 0.72;
+    const double minGridHeight = cardHeight * 2.5;
+
     return Scaffold(
       appBar: AppBar(title: const Text('活動設定')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildCourtSelector(selectedCount),
-            const SizedBox(height: 8),
-            _buildBalanceToggle(),
-            const SizedBox(height: 4),
-            _buildLiveScoringToggle(),
-            const SizedBox(height: 12),
-            _buildStatusBanner(selectedCount, resolvedCourts),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '選擇本次活動名單（已選 $selectedCount / $_maxPlayers）',
-                    style: Theme.of(context).textTheme.titleMedium,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildCourtSelector(selectedCount),
+                  const SizedBox(height: 8),
+                  _buildBalanceToggle(),
+                  const SizedBox(height: 4),
+                  _buildLiveScoringToggle(),
+                  const SizedBox(height: 12),
+                  _buildStatusBanner(selectedCount, resolvedCourts),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '選擇本次活動名單（已選 $selectedCount / $_maxPlayers）',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                      ),
+                      TextButton.icon(
+                        icon: const Icon(Icons.clear_all, size: 16),
+                        label: const Text('清空名單'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.red.shade400,
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        onPressed: _selected.isEmpty
+                            ? null
+                            : () => setState(() => _selected.clear()),
+                      ),
+                    ],
                   ),
-                ),
-                TextButton.icon(
-                  icon: const Icon(Icons.clear_all, size: 16),
-                  label: const Text('清空名單'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.red.shade400,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  onPressed: _selected.isEmpty
-                      ? null
-                      : () => setState(() => _selected.clear()),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Expanded(
-              child: players.isEmpty
-                  ? const Center(child: Text('請先到「玩家管理」新增玩家'))
-                  : GridView.builder(
-                      gridDelegate:
-                          const SliverGridDelegateWithMaxCrossAxisExtent(
-                            maxCrossAxisExtent: 100,
-                            crossAxisSpacing: 8,
-                            mainAxisSpacing: 8,
-                            childAspectRatio: 0.72,
+                  const SizedBox(height: 8),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: minGridHeight),
+                    child: players.isEmpty
+                        ? const SizedBox(
+                            height: minGridHeight,
+                            child: Center(child: Text('請先到「玩家管理」新增玩家')),
+                          )
+                        : GridView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            gridDelegate:
+                                const SliverGridDelegateWithMaxCrossAxisExtent(
+                                  maxCrossAxisExtent: 100,
+                                  crossAxisSpacing: 8,
+                                  mainAxisSpacing: 8,
+                                  childAspectRatio: 0.72,
+                                ),
+                            itemCount: players.length,
+                            itemBuilder: (context, index) =>
+                                _buildPlayerCard(players[index]),
                           ),
-                      itemCount: players.length,
-                      itemBuilder: (context, index) =>
-                          _buildPlayerCard(players[index]),
-                    ),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 8),
-            FilledButton.icon(
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: FilledButton.icon(
               icon: const Icon(Icons.save),
               onPressed: selectedCount > 0 ? _save : null,
               label: const Text('儲存名單'),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
