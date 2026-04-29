@@ -19,6 +19,7 @@ class Player {
     this.rating = 1000,
     this.notes = '',
     this.avatarPath,
+    this.points = 0,
   });
 
   final String id;
@@ -46,6 +47,9 @@ class Player {
   /// 預留：備註欄。
   String notes;
 
+  /// 累計個人得分（field index 10）。
+  int points;
+
   /// 勝率（0.0 ~ 1.0）；尚未上場時為 0。
   double get winRate => gamesPlayed == 0 ? 0.0 : wins / gamesPlayed;
 
@@ -59,6 +63,7 @@ class Player {
     int? rating,
     String? notes,
     Object? avatarPath = _sentinel,
+    int? points,
   }) {
     return Player(
       id: id,
@@ -73,6 +78,7 @@ class Player {
       avatarPath: identical(avatarPath, _sentinel)
           ? this.avatarPath
           : avatarPath as String?,
+      points: points ?? this.points,
     );
   }
 
@@ -108,13 +114,14 @@ class PlayerAdapter extends TypeAdapter<Player> {
       rating: fields[7] as int? ?? 1000,
       notes: fields[8] as String? ?? '',
       avatarPath: fields[9] as String?,
+      points: fields[10] as int? ?? 0,
     );
   }
 
   @override
   void write(BinaryWriter writer, Player obj) {
     writer
-      ..writeByte(10)
+      ..writeByte(11)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -134,6 +141,8 @@ class PlayerAdapter extends TypeAdapter<Player> {
       ..writeByte(8)
       ..write(obj.notes)
       ..writeByte(9)
-      ..write(obj.avatarPath);
+      ..write(obj.avatarPath)
+      ..writeByte(10)
+      ..write(obj.points);
   }
 }

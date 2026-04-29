@@ -23,8 +23,9 @@ class CourtCard extends StatelessWidget {
     this.onStart,
     this.onFinish,
     this.liveScore,
-    this.onIncrementScore,
+    this.onPlayerScore,
     this.onDecrementScore,
+    this.serveIndicator,
     this.onSwap,
     this.preview = false,
   }) : assert(players.length == 4, 'CourtCard 需要 4 位玩家');
@@ -43,11 +44,15 @@ class CourtCard extends StatelessWidget {
   /// 實時比分（null 代表非實時模式）。
   final (int, int)? liveScore;
 
-  /// 實時計分 +1：team 0=隊A、1=隊B。
-  final void Function(int team)? onIncrementScore;
+  /// 實時計分：指定場地玩家 index（0-3）得 1 分，由上層決定更新哪一隊。
+  final void Function(int courtPlayerIndex)? onPlayerScore;
 
-  /// 實時計分 -1：team 0=隊A、1=隊B。
+  /// 實時計分 -1（整隊扣分修正）：team 0=隊A、1=隊B。
   final void Function(int team)? onDecrementScore;
+
+  /// 發球員位置指示（null 代表不顯示）。
+  /// servingTeam: 0=隊A(上半場), 1=隊B(下半場)。serverAtRight: 偶數分站右。
+  final ({int servingTeam, bool serverAtRight})? serveIndicator;
 
   /// 玩家拖拉互換：`from` 為被拖動的來源、`toPlayerOnThisCourt` 為本場被放上的玩家。
   final void Function(PlayerDragHandle from, Player toPlayerOnThisCourt)?
@@ -87,7 +92,11 @@ class CourtCard extends StatelessWidget {
               child: Opacity(
                 opacity: preview ? 0.55 : 1.0,
                 child: CustomPaint(
-                  painter: BadmintonCourtPainter(),
+                  painter: BadmintonCourtPainter(
+                    serveIndicator: state == CourtState.playing
+                        ? serveIndicator
+                        : null,
+                  ),
                   child: _buildPlayersLayer(teamA, teamB),
                 ),
               ),
@@ -221,52 +230,100 @@ class CourtCard extends StatelessWidget {
   Widget _buildLiveScoreBar(BuildContext context, (int, int) score) {
     final (a, b) = score;
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(child: _buildScoreColumn(context, '隊 A', a, 0)),
+        Expanded(
+          child: _buildTeamScoreCol(
+            context,
+            '隊 A',
+            a,
+            0,
+            players.sublist(0, 2),
+          ),
+        ),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
           child: Text(':', style: Theme.of(context).textTheme.headlineMedium),
         ),
-        Expanded(child: _buildScoreColumn(context, '隊 B', b, 1)),
+        Expanded(
+          child: _buildTeamScoreCol(
+            context,
+            '隊 B',
+            b,
+            1,
+            players.sublist(2, 4),
+          ),
+        ),
       ],
     );
   }
 
-  Widget _buildScoreColumn(
+  Widget _buildTeamScoreCol(
     BuildContext context,
     String label,
     int score,
     int team,
+    List<Player> teamPlayers,
   ) {
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Text(label, style: Theme.of(context).textTheme.labelMedium),
+        Text(
+          '$score',
+          style: Theme.of(
+            context,
+          ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700),
+        ),
         Row(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            IconButton(
-              icon: const Icon(Icons.remove_circle_outline),
-              onPressed: score > 0 && onDecrementScore != null
-                  ? () => onDecrementScore!(team)
-                  : null,
-            ),
-            SizedBox(
-              width: 40,
-              child: Text(
-                '$score',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
+            for (int i = 0; i < teamPlayers.length; i++)
+              Expanded(
+                child: _buildPlayerScoreBtn(
+                  context,
+                  teamPlayers[i],
+                  team * 2 + i,
                 ),
               ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.add_circle_outline),
-              onPressed: onIncrementScore != null
-                  ? () => onIncrementScore!(team)
-                  : null,
-            ),
           ],
+        ),
+        IconButton(
+          icon: const Icon(Icons.remove_circle_outline),
+          iconSize: 20,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          onPressed: score > 0 && onDecrementScore != null
+              ? () => onDecrementScore!(team)
+              : null,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPlayerScoreBtn(
+    BuildContext context,
+    Player player,
+    int courtPlayerIndex,
+  ) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        PlayerAvatar(player: player, radius: 14),
+        Text(
+          player.name,
+          style: const TextStyle(fontSize: 11),
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
+          textAlign: TextAlign.center,
+        ),
+        IconButton(
+          icon: const Icon(Icons.add_circle_outline),
+          iconSize: 24,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+          onPressed: onPlayerScore != null
+              ? () => onPlayerScore!(courtPlayerIndex)
+              : null,
         ),
       ],
     );

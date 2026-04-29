@@ -8,10 +8,16 @@ class BadmintonCourtPainter extends CustomPainter {
   BadmintonCourtPainter({
     this.courtColor = const Color(0xFF2E7D32),
     this.lineColor = Colors.white,
+    this.serveIndicator,
   });
 
   final Color courtColor;
   final Color lineColor;
+
+  /// 發球員位置指示（null 代表不顯示）。
+  /// servingTeam: 0=上半場(隊A), 1=下半場(隊B)。
+  /// serverAtRight: true=右半場（己方總分為偶數）。
+  final ({int servingTeam, bool serverAtRight})? serveIndicator;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -83,10 +89,41 @@ class BadmintonCourtPainter extends CustomPainter {
     for (double x = 8; x < size.width - 8; x += dotSpacing) {
       canvas.drawCircle(Offset(x, size.height / 2), 1.2, netDot);
     }
+
+    // 發球員站位指示圓
+    if (serveIndicator != null) {
+      final si = serveIndicator!;
+      final cx = si.serverAtRight ? size.width * 0.75 : size.width * 0.25;
+      final cy = si.servingTeam == 0 ? size.height * 0.25 : size.height * 0.75;
+
+      final fillPaint = Paint()
+        ..color = Colors.yellow.withValues(alpha: 0.85)
+        ..style = PaintingStyle.fill;
+      final borderPaint = Paint()
+        ..color = Colors.orange
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2;
+      canvas.drawCircle(Offset(cx, cy), 10, fillPaint);
+      canvas.drawCircle(Offset(cx, cy), 10, borderPaint);
+
+      final tp = TextPainter(
+        text: const TextSpan(
+          text: 'S',
+          style: TextStyle(
+            color: Colors.black87,
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, Offset(cx - tp.width / 2, cy - tp.height / 2));
+    }
   }
 
   @override
   bool shouldRepaint(covariant BadmintonCourtPainter oldDelegate) =>
       oldDelegate.courtColor != courtColor ||
-      oldDelegate.lineColor != lineColor;
+      oldDelegate.lineColor != lineColor ||
+      oldDelegate.serveIndicator != serveIndicator;
 }

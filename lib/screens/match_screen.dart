@@ -11,6 +11,17 @@ import '../widgets/court_card.dart';
 import '../widgets/player_chip.dart';
 import '../widgets/player_drag_handle.dart';
 
+/// 發球狀態：追蹤哪隊發球、由哪位玩家發，以及雙方玩家的左右站位。
+///
+/// teamARight0 / teamBRight0：該隊 index 0 的玩家目前是否在右半場。
+/// 用於在發球權轉移時正確推算新發球員。
+typedef _ServeState = ({
+  int servingTeam, // 0=隊A(上半場) / 1=隊B(下半場)
+  int serverIndex, // 0 or 1，發球員在該隊中的 index
+  bool teamARight0, // 隊A: players[0] 目前在右半場
+  bool teamBRight0, // 隊B: players[0] 目前在右半場
+});
+
 class MatchScreen extends StatefulWidget {
   const MatchScreen({super.key, required this.repository});
 
@@ -41,11 +52,17 @@ class _MatchScreenState extends State<MatchScreen> {
   /// 每個場地的實時比分（teamA, teamB）；非實時模式下也維護，切換模式時不重置。
   List<(int, int)> _liveScores = [];
 
+  /// 每個場地的發球狀態（null 代表尚未設定或跳過）。
+  List<_ServeState?> _serveStates = [];
+
+  /// 本場活動累計個人得分：player id → 尚未存入 Hive 的得分。
+  /// 場地結束時將對應玩家的得分寫入 Hive 並從 map 移除。
+  Map<String, int> _sessionPoints = {};
+
   /// 上一局上場的玩家 ID，用於偵測兩組固定輪替並觸發重新洗牌。
   Set<String> _lastPlayedIds = {};
 
   /// 上一局的隊友關係：player id → 隊友 id。
-  /// 跨局保留，用於避免同一隊伍組合重複出現。
   Map<String, String?> _lastTeammates = {};
 
   bool get _started => _courts.isNotEmpty;
@@ -211,24 +228,27 @@ class _MatchScreenState extends State<MatchScreen> {
       state: _states[i],
       lastScore: _lastScores[i],
       liveScore: isLive ? _liveScores[i] : null,
-      onIncrementScore: isLive ? (team) => _changeScore(i, team, 1) : null,
-      onDecrementScore: isLive ? (team) => _changeScore(i, team, -1) : null,
-      onStart: () => _startCourt(i),
+      onPlayerScore: isLive ? (playerIdx) => _playerScore(i, playerIdx) : null,
+      onDecrementScore: isLive ? (team) => _decrementTeamScore(i, team) : null,
+      serveIndicator: _buildServeIndicator(i),
+      onStart: () {
+        _startCourt(i);
+      },
       onFinish: () => _finishCourt(i),
       onSwap: (from, toPlayer) =>
           _handleSwap(from: from, targetCourtIndex: i, targetPlayer: toPlayer),
     );
   }
 
-  void _changeScore(int courtIndex, int team, int delta) {
-    setState(() {
-      final (a, b) = _liveScores[courtIndex];
-      if (team == 0) {
-        _liveScores[courtIndex] = ((a + delta).clamp(0, 99), b);
-      } else {
-        _liveScores[courtIndex] = (a, (b + delta).clamp(0, 99));
-      }
-    });
+  /// 將 _ServeState 轉換成 BadmintonCourtPainter 需要的簡化形式。
+  ({int servingTeam, bool serverAtRight})? _buildServeIndicator(
+    int courtIndex,
+  ) {
+    final state = _serveStates[courtIndex];
+    if (state == null || _states[courtIndex] != CourtState.playing) return null;
+    final (a, b) = _liveScores[courtIndex];
+    final teamScore = state.servingTeam == 0 ? a : b;
+    return (servingTeam: state.servingTeam, serverAtRight: teamScore % 2 == 0);
   }
 
   Widget _sectionTitle(String text) => Padding(
@@ -243,7 +263,6 @@ class _MatchScreenState extends State<MatchScreen> {
         child: Text('（全員上場，無人等待）'),
       );
     }
-    // 只要還有任何一個場地是 pending，就允許拖拉。
     final canDrag = _states.any((s) => s == CourtState.pending);
     return Padding(
       padding: const EdgeInsets.all(8),
@@ -264,7 +283,6 @@ class _MatchScreenState extends State<MatchScreen> {
     final handle = PlayerDragHandle(player: p, courtIndex: null);
     final feedback = Material(color: Colors.transparent, child: card);
     final childWhenDragging = Opacity(opacity: 0.3, child: card);
-    // Web 上改用 Draggable（即拖即起），見 court_card.dart 內說明。
     final Widget draggable = kIsWeb
         ? Draggable<PlayerDragHandle>(
             data: handle,
@@ -322,6 +340,8 @@ class _MatchScreenState extends State<MatchScreen> {
       );
       _lastScores = List<CourtScore?>.filled(session.courts.length, null);
       _liveScores = [for (var _ in session.courts) (0, 0)];
+      _serveStates = List<_ServeState?>.filled(session.courts.length, null);
+      _sessionPoints = {};
       _waiting = List<Player>.of(session.waiting);
       _eventCounter = 0;
       _lastPlayedIds = {};
@@ -329,11 +349,117 @@ class _MatchScreenState extends State<MatchScreen> {
     });
   }
 
-  void _startCourt(int courtIndex) {
+  Future<void> _startCourt(int courtIndex) async {
+    if (widget.repository.liveScoring) {
+      final court = _courts[courtIndex];
+      final choice = await showDialog<({int servingTeam, int serverIndex})>(
+        context: context,
+        builder: (ctx) => _ServeSelectionDialog(
+          teamA: court.sublist(0, 2),
+          teamB: court.sublist(2, 4),
+        ),
+      );
+      if (!mounted) return;
+      setState(() {
+        _states[courtIndex] = CourtState.playing;
+        _liveScores[courtIndex] = (0, 0);
+        if (choice != null) {
+          final t = choice.servingTeam;
+          final s = choice.serverIndex;
+          // 初始分數 0（偶數）→ 發球員站右半場。
+          _serveStates[courtIndex] = (
+            servingTeam: t,
+            serverIndex: s,
+            teamARight0: t == 0 ? (s == 0) : true,
+            teamBRight0: t == 1 ? (s == 0) : true,
+          );
+        } else {
+          _serveStates[courtIndex] = null;
+        }
+      });
+    } else {
+      setState(() {
+        _states[courtIndex] = CourtState.playing;
+        _liveScores[courtIndex] = (0, 0);
+      });
+    }
+  }
+
+  /// 場地玩家 [playerIndexInCourt]（0-3）得 1 分。
+  /// 更新實時比分、累計個人得分、重算發球狀態。
+  void _playerScore(int courtIndex, int playerIndexInCourt) {
+    final court = _courts[courtIndex];
+    final player = court[playerIndexInCourt];
+    final team = playerIndexInCourt < 2 ? 0 : 1;
+    final teamPlayerIndex = playerIndexInCourt % 2;
+
     setState(() {
-      _states[courtIndex] = CourtState.playing;
-      _liveScores[courtIndex] = (0, 0);
+      final (a, b) = _liveScores[courtIndex];
+      final newA = team == 0 ? (a + 1).clamp(0, 99) : a;
+      final newB = team == 1 ? (b + 1).clamp(0, 99) : b;
+      _liveScores[courtIndex] = (newA, newB);
+
+      _sessionPoints[player.id] = (_sessionPoints[player.id] ?? 0) + 1;
+
+      final serveState = _serveStates[courtIndex];
+      if (serveState != null) {
+        _serveStates[courtIndex] = _updateServeState(
+          state: serveState,
+          scoringTeam: team,
+          scoringPlayerIndex: teamPlayerIndex,
+          newScoreA: newA,
+          newScoreB: newB,
+        );
+      }
     });
+  }
+
+  /// 整隊扣 1 分（修正用），不影響個人得分與發球狀態。
+  void _decrementTeamScore(int courtIndex, int team) {
+    setState(() {
+      final (a, b) = _liveScores[courtIndex];
+      if (team == 0) {
+        _liveScores[courtIndex] = ((a - 1).clamp(0, 99), b);
+      } else {
+        _liveScores[courtIndex] = (a, (b - 1).clamp(0, 99));
+      }
+    });
+  }
+
+  /// 依得分事件重算發球狀態。
+  _ServeState _updateServeState({
+    required _ServeState state,
+    required int scoringTeam,
+    required int scoringPlayerIndex,
+    required int newScoreA,
+    required int newScoreB,
+  }) {
+    if (scoringTeam == state.servingTeam) {
+      // 發球方得分：同隊繼續發，得分玩家為新發球員。
+      // 偶數分→右半場，奇數分→左半場。
+      final N = scoringTeam == 0 ? newScoreA : newScoreB;
+      final newRight0 = (scoringPlayerIndex == 0) == (N % 2 == 0);
+      return (
+        servingTeam: state.servingTeam,
+        serverIndex: scoringPlayerIndex,
+        teamARight0: scoringTeam == 0 ? newRight0 : state.teamARight0,
+        teamBRight0: scoringTeam == 1 ? newRight0 : state.teamBRight0,
+      );
+    } else {
+      // 接球方得分：發球權轉移，雙方站位不變，依新發球隊分數奇偶推算誰發球。
+      final newServingTeam = scoringTeam;
+      final M = newServingTeam == 0 ? newScoreA : newScoreB;
+      final teamRight0 = newServingTeam == 0
+          ? state.teamARight0
+          : state.teamBRight0;
+      final newServerIndex = (teamRight0 == (M % 2 == 0)) ? 0 : 1;
+      return (
+        servingTeam: newServingTeam,
+        serverIndex: newServerIndex,
+        teamARight0: state.teamARight0,
+        teamBRight0: state.teamBRight0,
+      );
+    }
   }
 
   /// 拖拉互換：把 [from]（場地或等待區玩家）與 [targetPlayer]（場地 / 等待區）對調。
@@ -342,11 +468,9 @@ class _MatchScreenState extends State<MatchScreen> {
     required int? targetCourtIndex,
     required Player targetPlayer,
   }) {
-    // 拖來源必須仍在 pending 狀態（場地）或是等待區。
     if (!from.fromWaiting && _states[from.courtIndex!] != CourtState.pending) {
       return;
     }
-    // 目的地如為場地也必須 pending。
     if (targetCourtIndex != null &&
         _states[targetCourtIndex] != CourtState.pending) {
       return;
@@ -354,7 +478,6 @@ class _MatchScreenState extends State<MatchScreen> {
 
     setState(() {
       final sourcePlayer = from.player;
-      // 先從來源移走 sourcePlayer，放 targetPlayer。
       if (from.fromWaiting) {
         final i = _waiting.indexWhere((x) => x.id == sourcePlayer.id);
         if (i < 0) return;
@@ -365,7 +488,6 @@ class _MatchScreenState extends State<MatchScreen> {
         if (i < 0) return;
         court[i] = targetPlayer;
       }
-      // 再把 targetPlayer 位置換成 sourcePlayer。
       if (targetCourtIndex == null) {
         final i = _waiting.indexWhere((x) => x.id == targetPlayer.id);
         if (i < 0) return;
@@ -379,7 +501,7 @@ class _MatchScreenState extends State<MatchScreen> {
     });
   }
 
-  /// 結束單一場地：輸入比分 → 更新勝負 / gamesPlayed → 立刻從等待區補 4 人。
+  /// 結束單一場地：更新勝負、場次、個人得分 → 從等待區補 4 人。
   Future<void> _finishCourt(int courtIndex) async {
     final court = _courts[courtIndex];
     final teamA = court.sublist(0, 2);
@@ -405,16 +527,20 @@ class _MatchScreenState extends State<MatchScreen> {
       if (score == null) return;
     }
 
+    // 提取並清除本場地玩家的 session 得分（確認結束後才執行）。
+    final courtSessionPts = <String, int>{};
+    for (final p in court) {
+      courtSessionPts[p.id] = _sessionPoints.remove(p.id) ?? 0;
+    }
+
     _eventCounter++;
     final roundId = _eventCounter;
 
-    // 0) 記錄本局隊友，供下一局分組時避免重複
     _lastTeammates[court[0].id] = court[1].id;
     _lastTeammates[court[1].id] = court[0].id;
     _lastTeammates[court[2].id] = court[3].id;
     _lastTeammates[court[3].id] = court[2].id;
 
-    // 1) 更新剛下場的 4 位：gamesPlayed+1、勝者 wins+1、waitingRounds=0、lastPlayedRound=roundId
     final winnerIds = switch (score.winningTeam) {
       0 => {court[0].id, court[1].id},
       1 => {court[2].id, court[3].id},
@@ -427,14 +553,11 @@ class _MatchScreenState extends State<MatchScreen> {
             wins: p.wins + (winnerIds.contains(p.id) ? 1 : 0),
             lastPlayedRound: roundId,
             waitingRounds: 0,
+            points: p.points + (courtSessionPts[p.id] ?? 0),
           ),
         )
         .toList();
 
-    // 2) 等待區玩家等待輪數處理：
-    //    若等待區的人與「上局上場者」完全相同，代表兩組固定輪替。
-    //    此時重置所有人的 waitingRounds 為 0，讓全體重新公平抽籤，產生新組合。
-    //    否則正常 waitingRounds +1。
     final waitingIds = _waiting.map((p) => p.id).toSet();
     final isCycleRepeat =
         _lastPlayedIds.isNotEmpty &&
@@ -448,7 +571,6 @@ class _MatchScreenState extends State<MatchScreen> {
         )
         .toList();
 
-    // 3) 候選池 = 剛下場 + 原等待者；挑 4 人上新場地
     final pool = [...justFinished, ...bumpedWaiting];
     final newPlaying = _matchMaker.pickPlayers(
       pool,
@@ -461,7 +583,6 @@ class _MatchScreenState extends State<MatchScreen> {
         .where((p) => !newPlayingIds.contains(p.id))
         .toList();
 
-    // 4) 寫回 Hive（僅更新有變動的玩家；其他場地正在打的人不動）
     await widget.repository.updateAll([...justFinished, ...bumpedWaiting]);
     await widget.repository.setCurrentRound(roundId);
 
@@ -470,6 +591,7 @@ class _MatchScreenState extends State<MatchScreen> {
       _states[courtIndex] = CourtState.pending;
       _lastScores[courtIndex] = score;
       _liveScores[courtIndex] = (0, 0);
+      _serveStates[courtIndex] = null;
       _waiting = newWaiting;
       _lastPlayedIds = court.map((p) => p.id).toSet();
     });
@@ -503,12 +625,105 @@ class _MatchScreenState extends State<MatchScreen> {
         _states = [];
         _lastScores = [];
         _liveScores = [];
+        _serveStates = [];
+        _sessionPoints = {};
         _waiting = [];
         _eventCounter = 0;
         _lastPlayedIds = {};
         _lastTeammates = {};
       });
     }
+  }
+}
+
+// ---- Dialogs ---------------------------------------------------------------
+
+/// 發球方選擇 dialog：讓使用者選哪隊先發、由哪位玩家開球。
+class _ServeSelectionDialog extends StatefulWidget {
+  const _ServeSelectionDialog({required this.teamA, required this.teamB});
+
+  final List<Player> teamA;
+  final List<Player> teamB;
+
+  @override
+  State<_ServeSelectionDialog> createState() => _ServeSelectionDialogState();
+}
+
+class _ServeSelectionDialogState extends State<_ServeSelectionDialog> {
+  int _servingTeam = 0;
+  int _serverIndex = 0;
+
+  List<Player> get _currentTeam =>
+      _servingTeam == 0 ? widget.teamA : widget.teamB;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('選擇發球方'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('哪隊先發球？', style: Theme.of(context).textTheme.labelLarge),
+            RadioGroup<int>(
+              groupValue: _servingTeam,
+              onChanged: (v) => setState(() {
+                _servingTeam = v!;
+                _serverIndex = 0;
+              }),
+              child: Column(
+                children: [
+                  RadioListTile<int>(
+                    dense: true,
+                    title: Text(
+                      '隊 A（${widget.teamA.map((p) => p.name).join('、')}）',
+                    ),
+                    value: 0,
+                  ),
+                  RadioListTile<int>(
+                    dense: true,
+                    title: Text(
+                      '隊 B（${widget.teamB.map((p) => p.name).join('、')}）',
+                    ),
+                    value: 1,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text('由誰開球？', style: Theme.of(context).textTheme.labelLarge),
+            RadioGroup<int>(
+              groupValue: _serverIndex,
+              onChanged: (v) => setState(() => _serverIndex = v!),
+              child: Column(
+                children: [
+                  for (int i = 0; i < _currentTeam.length; i++)
+                    RadioListTile<int>(
+                      dense: true,
+                      title: Text(_currentTeam[i].name),
+                      value: i,
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('跳過'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, (
+            servingTeam: _servingTeam,
+            serverIndex: _serverIndex,
+          )),
+          child: const Text('確定'),
+        ),
+      ],
+    );
   }
 }
 
