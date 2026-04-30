@@ -26,6 +26,7 @@ lib/
     court_score.dart             // 場地比分
     court_state.dart             // 場地狀態（pending / playing）
     session_config.dart          // 本次活動設定
+    activity.dart                // 活動預設（名稱 + 名單 + 場地設定），以 JSON 存入 app_meta
   services/
     match_maker.dart             // 分組 / 輪替 / 勝率平衡核心邏輯（純函式、可測）
     avatar_service.dart          // 頭像存取（native 存檔 / web 轉 base64）
@@ -34,7 +35,8 @@ lib/
   screens/
     home_screen.dart             // 底部導覽（玩家 / 活動設定 / 比賽）
     player_management_screen.dart
-    session_setup_screen.dart
+    session_setup_screen.dart    // 活動清單（tap 選中 / 滑刪 / 編輯）
+    activity_edit_screen.dart    // 新增 / 編輯活動（名稱 + 名單 + 場地設定）
     match_screen.dart            // 主畫面：Court 1/2 左右並排、等待區
   widgets/
     player_chip.dart             // 玩家徽章（顯示勝率）
@@ -126,8 +128,10 @@ List<Player> pickPlayers(
 | --- | --- |
 | `current_round` | 目前輪次 |
 | `preferred_courts` | 偏好場地數（1 或 2） |
-| `active_roster_ids` | 本次活動名單 ID 清單 |
+| `active_roster_ids` | 本次活動名單 ID 清單（由啟用活動同步） |
 | `balance_by_win_rate` | 是否啟用勝率平衡分組（bool，預設 false） |
+| `activities_v1` | 所有活動的 JSON 陣列（含名稱、名單、設定） |
+| `active_activity_id` | 目前啟用的活動 id |
 
 - 採**手寫 TypeAdapter** 以避免 `build_runner` 依賴。
 - `PlayerRepository` 繼承 `ChangeNotifier`，任何變動會通知 UI 重繪。
@@ -141,9 +145,11 @@ List<Player> pickPlayers(
 
 1. **玩家管理頁**：新增 / 刪除玩家，切換固定 / 零打，上傳頭像（JPG / PNG / WebP）。
 2. **活動設定頁**：
-   - 勾選名單（上限 14 人）、選擇 1 / 2 場地。
-   - 開關「**勝率平衡分組**」（啟用後每場自動挑最均衡的 2v2）。
-   - 頁面即時顯示「實際將啟用幾個場地」。
+   - 顯示所有已儲存的活動清單；目前啟用的活動有勾選圖示。
+   - Tap 活動 → 切換為啟用（比賽頁自動讀取其名單與設定）。
+   - 右滑刪除活動（含確認 dialog）。
+   - 右上角鉛筆 icon → 進入編輯畫面；右下角 + → 新增活動。
+   - **新增 / 編輯活動**：輸入名稱、勾選名單（上限 14 人）、選 1 / 2 場地、開關勝率平衡與實時計分。
 3. **比賽頁**（主畫面）：
    - 尚未開始：顯示名單與場地數，按「開始排場」生成第 1 輪。
    - 進行中：顯示 Court 1 / 2（兩場地時左右並排）、等待區；可拖拉玩家互換位置。

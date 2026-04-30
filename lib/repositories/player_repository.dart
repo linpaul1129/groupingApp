@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
 
+import '../models/activity.dart';
 import '../models/player.dart';
 import '../models/player_type.dart';
 
@@ -18,6 +21,8 @@ class PlayerRepository extends ChangeNotifier {
   static const String _rosterKey = 'active_roster_ids';
   static const String _balanceByWinRateKey = 'balance_by_win_rate';
   static const String _liveScoringKey = 'live_scoring';
+  static const String _activitiesKey = 'activities_v1';
+  static const String _activeActivityIdKey = 'active_activity_id';
 
   final Box<Player> _playerBox;
   final Box _metaBox;
@@ -37,7 +42,27 @@ class PlayerRepository extends ChangeNotifier {
     registerAdapters();
     final playerBox = await Hive.openBox<Player>(_playerBoxName);
     final metaBox = await Hive.openBox(_metaBoxName);
-    return PlayerRepository._(playerBox, metaBox);
+    final repo = PlayerRepository._(playerBox, metaBox);
+    await repo._migrateIfNeeded();
+    return repo;
+  }
+
+  /// 若 activities 為空但舊有名單存在，自動建立一筆「預設活動」。
+  Future<void> _migrateIfNeeded() async {
+    final raw = _metaBox.get(_activitiesKey);
+    if (raw != null) return;
+    final existingRoster = activeRosterIds;
+    if (existingRoster.isEmpty) return;
+    final defaultActivity = Activity(
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      name: '預設活動',
+      rosterIds: existingRoster,
+      preferredCourts: preferredCourts,
+      balanceByWinRate: balanceByWinRate,
+      liveScoring: liveScoring,
+    );
+    await _writeActivities([defaultActivity]);
+    await _metaBox.put(_activeActivityIdKey, defaultActivity.id);
   }
 
   // ---- Player CRUD -------------------------------------------------------
@@ -57,6 +82,19 @@ class PlayerRepository extends ChangeNotifier {
     final roster = activeRosterIds;
     if (roster.contains(id)) {
       await saveActiveRoster(roster.where((e) => e != id).toList());
+    }
+    // 從所有活動的名單中移除。
+    final current = activities;
+    if (current.any((a) => a.rosterIds.contains(id))) {
+      await _writeActivities(
+        current
+            .map(
+              (a) => a.copyWith(
+                rosterIds: a.rosterIds.where((e) => e != id).toList(),
+              ),
+            )
+            .toList(),
+      );
     }
     notifyListeners();
   }
@@ -115,6 +153,53 @@ class PlayerRepository extends ChangeNotifier {
     await _metaBox.put(_liveScoringKey, value);
     notifyListeners();
   }
+
+  // ---- Activities --------------------------------------------------------
+
+  List<Activity> get activities {
+    final raw = _metaBox.get(_activitiesKey, defaultValue: '[]');
+    if (raw is! String) return const [];
+    try {
+      final list = jsonDecode(raw) as List;
+      return list
+          .whereType<Map>()
+          .map((e) => Activity.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> saveActivities(List<Activity> list) async {
+    await _writeActivities(list);
+    notifyListeners();
+  }
+
+  Future<void> _writeActivities(List<Activity> list) async {
+    await _metaBox.put(
+      _activitiesKey,
+      jsonEncode(list.map((a) => a.toJson()).toList()),
+    );
+  }
+
+  String? get activeActivityId => _metaBox.get(_activeActivityIdKey) as String?;
+
+  /// 啟用活動：同步更新 MatchScreen 使用的舊有設定 key。
+  Future<void> activateActivity(Activity activity) async {
+    await _metaBox.put(_activeActivityIdKey, activity.id);
+    await _metaBox.put(_rosterKey, activity.rosterIds);
+    await _metaBox.put(_preferredCourtsKey, activity.preferredCourts);
+    await _metaBox.put(_balanceByWinRateKey, activity.balanceByWinRate);
+    await _metaBox.put(_liveScoringKey, activity.liveScoring);
+    notifyListeners();
+  }
+
+  Future<void> clearActiveActivity() async {
+    await _metaBox.delete(_activeActivityIdKey);
+    notifyListeners();
+  }
+
+  // ---- Reset -------------------------------------------------------------
 
   /// 重置活動：歸零輪次、清空 waitingRounds / lastPlayedRound（但保留
   /// 累計 gamesPlayed / wins 作為歷史統計）。
