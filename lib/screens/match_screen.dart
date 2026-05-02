@@ -598,25 +598,15 @@ class _MatchScreenState extends State<MatchScreen> {
   }
 
   Future<void> _reset() async {
+    final roster = _loadRoster();
+    final eligible = roster.where((p) => p.gamesPlayed > 0).toList();
+    final Player? mvp = eligible.isEmpty
+        ? null
+        : eligible.reduce((a, b) => a.winRate >= b.winRate ? a : b);
+
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('重置活動'),
-        content: const Text(
-          '將清除本次活動狀態（等待輪數、輪次），'
-          '但保留累計場次與勝場。是否繼續？',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('重置'),
-          ),
-        ],
-      ),
+      builder: (ctx) => _EndOfDayDialog(mvp: mvp),
     );
     if (ok == true) {
       await widget.repository.resetSession();
@@ -637,6 +627,90 @@ class _MatchScreenState extends State<MatchScreen> {
 }
 
 // ---- Dialogs ---------------------------------------------------------------
+
+/// 今日比賽結束 dialog：顯示 MVP（勝率最高的玩家）並確認結束。
+class _EndOfDayDialog extends StatelessWidget {
+  const _EndOfDayDialog({this.mvp});
+
+  final Player? mvp;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    return AlertDialog(
+      title: const Text('今日比賽結束'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (mvp != null) ...[
+            const Icon(Icons.emoji_events, size: 56, color: Colors.amber),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.amber.shade100,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.amber.shade600, width: 1.5),
+              ),
+              child: Text(
+                'MVP',
+                style: TextStyle(
+                  color: Colors.amber.shade800,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 13,
+                  letterSpacing: 3,
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              mvp!.name,
+              style: textTheme.headlineMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '勝率 ${(mvp!.winRate * 100).toStringAsFixed(0)}%'
+              '（${mvp!.wins} 勝 / ${mvp!.gamesPlayed} 場）',
+              style: textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ] else
+            Text(
+              '尚無比賽紀錄',
+              style: textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          const SizedBox(height: 12),
+          Text(
+            '結束後將清除本次活動狀態，累計勝場數保留。',
+            style: textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('結束比賽'),
+        ),
+      ],
+    );
+  }
+}
 
 /// 發球方選擇 dialog：讓使用者選哪隊先發、由哪位玩家開球。
 class _ServeSelectionDialog extends StatefulWidget {
