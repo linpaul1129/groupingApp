@@ -72,7 +72,6 @@ class _SessionSetupScreenState extends State<SessionSetupScreen> {
     final tags = [
       '${activity.preferredCourts} 場地',
       if (activity.balanceByWinRate) '勝率平衡',
-      if (activity.liveScoring) '實時計分',
     ].join('・');
 
     return Dismissible(

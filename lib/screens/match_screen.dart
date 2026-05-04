@@ -220,20 +220,20 @@ class _MatchScreenState extends State<MatchScreen> {
   }
 
   Widget _buildCourtCard(int i) {
-    final isLive = widget.repository.liveScoring;
+    final serve = _serveStates[i];
     return CourtCard(
       title: 'Court ${i + 1}',
       courtIndex: i,
       players: _courts[i],
       state: _states[i],
       lastScore: _lastScores[i],
-      liveScore: isLive ? _liveScores[i] : null,
-      onPlayerScore: isLive ? (playerIdx) => _playerScore(i, playerIdx) : null,
-      onDecrementScore: isLive ? (team) => _decrementTeamScore(i, team) : null,
+      liveScore: _liveScores[i],
+      onPlayerScore: (player) => _playerScore(i, player),
+      onDecrementScore: (team) => _decrementTeamScore(i, team),
       serveIndicator: _buildServeIndicator(i),
-      onStart: () {
-        _startCourt(i);
-      },
+      teamARight0: serve?.teamARight0 ?? false,
+      teamBRight0: serve?.teamBRight0 ?? false,
+      onStart: () => _startCourt(i),
       onFinish: () => _finishCourt(i),
       onSwap: (from, toPlayer) =>
           _handleSwap(from: from, targetCourtIndex: i, targetPlayer: toPlayer),
@@ -350,46 +350,40 @@ class _MatchScreenState extends State<MatchScreen> {
   }
 
   Future<void> _startCourt(int courtIndex) async {
-    if (widget.repository.liveScoring) {
-      final court = _courts[courtIndex];
-      final choice = await showDialog<({int servingTeam, int serverIndex})>(
-        context: context,
-        builder: (ctx) => _ServeSelectionDialog(
-          teamA: court.sublist(0, 2),
-          teamB: court.sublist(2, 4),
-        ),
-      );
-      if (!mounted) return;
-      setState(() {
-        _states[courtIndex] = CourtState.playing;
-        _liveScores[courtIndex] = (0, 0);
-        if (choice != null) {
-          final t = choice.servingTeam;
-          final s = choice.serverIndex;
-          // 初始分數 0（偶數）→ 發球員站右半場。
-          _serveStates[courtIndex] = (
-            servingTeam: t,
-            serverIndex: s,
-            teamARight0: t == 0 ? (s == 0) : true,
-            teamBRight0: t == 1 ? (s == 0) : true,
-          );
-        } else {
-          _serveStates[courtIndex] = null;
-        }
-      });
-    } else {
-      setState(() {
-        _states[courtIndex] = CourtState.playing;
-        _liveScores[courtIndex] = (0, 0);
-      });
-    }
+    final court = _courts[courtIndex];
+    final choice = await showDialog<({int servingTeam, int serverIndex})>(
+      context: context,
+      builder: (ctx) => _ServeSelectionDialog(
+        teamA: court.sublist(0, 2),
+        teamB: court.sublist(2, 4),
+      ),
+    );
+    if (!mounted) return;
+    setState(() {
+      _states[courtIndex] = CourtState.playing;
+      _liveScores[courtIndex] = (0, 0);
+      if (choice != null) {
+        final t = choice.servingTeam;
+        final s = choice.serverIndex;
+        // 初始分數 0（偶數）→ 發球員站右半場。
+        _serveStates[courtIndex] = (
+          servingTeam: t,
+          serverIndex: s,
+          teamARight0: t == 0 ? (s == 0) : true,
+          teamBRight0: t == 1 ? (s == 0) : true,
+        );
+      } else {
+        _serveStates[courtIndex] = null;
+      }
+    });
   }
 
-  /// 場地玩家 [playerIndexInCourt]（0-3）得 1 分。
+  /// 指定玩家得 1 分。
   /// 更新實時比分、累計個人得分、重算發球狀態。
-  void _playerScore(int courtIndex, int playerIndexInCourt) {
+  void _playerScore(int courtIndex, Player player) {
     final court = _courts[courtIndex];
-    final player = court[playerIndexInCourt];
+    final playerIndexInCourt = court.indexWhere((p) => p.id == player.id);
+    if (playerIndexInCourt < 0) return;
     final team = playerIndexInCourt < 2 ? 0 : 1;
     final teamPlayerIndex = playerIndexInCourt % 2;
 
@@ -501,31 +495,45 @@ class _MatchScreenState extends State<MatchScreen> {
     });
   }
 
-  /// 結束單一場地：更新勝負、場次、個人得分 → 從等待區補 4 人。
+  /// 結束單一場地：詢問使用者採用目前實時比分或手動輸入。
   Future<void> _finishCourt(int courtIndex) async {
     final court = _courts[courtIndex];
-    final teamA = court.sublist(0, 2);
-    final teamB = court.sublist(2, 4);
+    final (a, b) = _liveScores[courtIndex];
 
-    final CourtScore? score;
-    if (widget.repository.liveScoring) {
-      final (a, b) = _liveScores[courtIndex];
-      if (a == b) {
-        if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('比分相同，無法判定勝負，請繼續計分')));
+    final choice = await showDialog<_FinishChoice>(
+      context: context,
+      builder: (ctx) => _FinishOptionsDialog(liveA: a, liveB: b),
+    );
+    if (choice == null || !mounted) return;
+
+    switch (choice) {
+      case _FinishChoice.useLive:
+        if (a == b) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('比分相同，無法判定勝負，請繼續計分或改手動輸入')),
+          );
+          return;
         }
-        return;
-      }
-      score = CourtScore(teamAScore: a, teamBScore: b);
-    } else {
-      score = await showDialog<CourtScore>(
-        context: context,
-        builder: (ctx) => _ScoreInputDialog(teamA: teamA, teamB: teamB),
-      );
-      if (score == null) return;
+        await _applyFinish(
+          courtIndex,
+          CourtScore(teamAScore: a, teamBScore: b),
+        );
+      case _FinishChoice.manual:
+        final score = await showDialog<CourtScore>(
+          context: context,
+          builder: (ctx) => _ScoreInputDialog(
+            teamA: court.sublist(0, 2),
+            teamB: court.sublist(2, 4),
+          ),
+        );
+        if (score == null || !mounted) return;
+        await _applyFinish(courtIndex, score);
     }
+  }
+
+  /// 共用收尾：更新勝負、場次、個人得分 → 從等待區補 4 人。
+  Future<void> _applyFinish(int courtIndex, CourtScore score) async {
+    final court = _courts[courtIndex];
 
     // 提取並清除本場地玩家的 session 得分（確認結束後才執行）。
     final courtSessionPts = <String, int>{};
@@ -627,6 +635,60 @@ class _MatchScreenState extends State<MatchScreen> {
 }
 
 // ---- Dialogs ---------------------------------------------------------------
+
+enum _FinishChoice { useLive, manual }
+
+/// 結束本場時詢問：使用目前實時比分，或另外手動輸入。
+class _FinishOptionsDialog extends StatelessWidget {
+  const _FinishOptionsDialog({required this.liveA, required this.liveB});
+
+  final int liveA;
+  final int liveB;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return AlertDialog(
+      title: const Text('結束本場'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('目前實時比分', style: textTheme.labelLarge),
+          const SizedBox(height: 6),
+          Center(
+            child: Text(
+              '$liveA : $liveB',
+              style: textTheme.displaySmall?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            '要採用此比分，還是另外手動輸入？',
+            style: textTheme.bodyMedium,
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, _FinishChoice.manual),
+          child: const Text('手動輸入'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _FinishChoice.useLive),
+          child: const Text('使用此比分'),
+        ),
+      ],
+    );
+  }
+}
 
 /// 今日比賽結束 dialog：顯示 MVP（勝率最高的玩家）並確認結束。
 class _EndOfDayDialog extends StatelessWidget {

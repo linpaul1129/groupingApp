@@ -12,6 +12,7 @@ import 'player_drag_handle.dart';
 ///
 /// pending 狀態時玩家是 `LongPressDraggable` 與 `DragTarget`，可直接和
 /// 等待區的玩家互換（由 [onSwap] 回呼給上層執行）。
+/// playing 狀態時點擊玩家頭像 = 該玩家得 1 分。
 class CourtCard extends StatelessWidget {
   const CourtCard({
     super.key,
@@ -26,6 +27,8 @@ class CourtCard extends StatelessWidget {
     this.onPlayerScore,
     this.onDecrementScore,
     this.serveIndicator,
+    this.teamARight0 = false,
+    this.teamBRight0 = false,
     this.onSwap,
     this.preview = false,
   }) : assert(players.length == 4, 'CourtCard 需要 4 位玩家');
@@ -44,15 +47,21 @@ class CourtCard extends StatelessWidget {
   /// 實時比分（null 代表非實時模式）。
   final (int, int)? liveScore;
 
-  /// 實時計分：指定場地玩家 index（0-3）得 1 分，由上層決定更新哪一隊。
-  final void Function(int courtPlayerIndex)? onPlayerScore;
+  /// 點擊玩家得 1 分。
+  final void Function(Player player)? onPlayerScore;
 
-  /// 實時計分 -1（整隊扣分修正）：team 0=隊A、1=隊B。
+  /// 整隊扣 1 分（修正用）：team 0=隊A、1=隊B。
   final void Function(int team)? onDecrementScore;
 
   /// 發球員位置指示（null 代表不顯示）。
   /// servingTeam: 0=隊A(上半場), 1=隊B(下半場)。serverAtRight: 偶數分站右。
   final ({int servingTeam, bool serverAtRight})? serveIndicator;
+
+  /// A 隊 index 0 玩家是否站在右半場（影響 UI 左右排列）。
+  final bool teamARight0;
+
+  /// B 隊 index 0 玩家是否站在右半場。
+  final bool teamBRight0;
 
   /// 玩家拖拉互換：`from` 為被拖動的來源、`toPlayerOnThisCourt` 為本場被放上的玩家。
   final void Function(PlayerDragHandle from, Player toPlayerOnThisCourt)?
@@ -74,18 +83,7 @@ class CourtCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.sports_tennis,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(width: 8),
-                Text(title, style: Theme.of(context).textTheme.titleMedium),
-                const Spacer(),
-                _buildStatusBadge(context),
-              ],
-            ),
+            _buildHeader(context),
             const SizedBox(height: 10),
             AspectRatio(
               aspectRatio: 16 / 11,
@@ -111,6 +109,39 @@ class CourtCard extends StatelessWidget {
     );
   }
 
+  Widget _buildHeader(BuildContext context) {
+    final showLive = state == CourtState.playing && liveScore != null;
+    return Row(
+      children: [
+        Icon(Icons.sports_tennis, color: Theme.of(context).colorScheme.primary),
+        const SizedBox(width: 8),
+        Text(title, style: Theme.of(context).textTheme.titleMedium),
+        Expanded(
+          child: showLive
+              ? Center(child: _buildLiveScoreInline(context, liveScore!))
+              : const SizedBox.shrink(),
+        ),
+        _buildStatusBadge(context),
+      ],
+    );
+  }
+
+  Widget _buildLiveScoreInline(BuildContext context, (int, int) score) {
+    final (a, b) = score;
+    final style = Theme.of(context).textTheme.headlineSmall?.copyWith(
+      fontWeight: FontWeight.w800,
+      letterSpacing: 1,
+    );
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text('$a : $b', style: style),
+    );
+  }
+
   Widget _buildStatusBadge(BuildContext context) {
     final (label, color) = switch (state) {
       CourtState.pending => ('待開始', Colors.orange.shade700),
@@ -131,13 +162,16 @@ class CourtCard extends StatelessWidget {
   }
 
   Widget _buildPlayersLayer(List<Player> teamA, List<Player> teamB) {
+    // 發球換邊：team[0] 在右半場時，視覺上排序要反轉（Row 第一個元素在左）。
+    final orderedA = teamARight0 ? [teamA[1], teamA[0]] : teamA;
+    final orderedB = teamBRight0 ? [teamB[1], teamB[0]] : teamB;
     return Padding(
       padding: const EdgeInsets.all(8),
       child: Column(
         children: [
-          Expanded(child: _teamRow(teamA)),
+          Expanded(child: _teamRow(orderedA)),
           const SizedBox(height: 2),
-          Expanded(child: _teamRow(teamB)),
+          Expanded(child: _teamRow(orderedB)),
         ],
       ),
     );
@@ -146,15 +180,36 @@ class CourtCard extends StatelessWidget {
   Widget _teamRow(List<Player> team) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: [for (final p in team) _wrapPlayer(p)],
+      children: [for (final p in team) Expanded(child: _wrapPlayer(p))],
     );
   }
 
-  /// 依 [state] 決定玩家是否可拖拉 / 接收拖放。
+  /// 依 [state] 決定玩家是拖拉、還是點擊計分。
   Widget _wrapPlayer(Player player) {
-    final slot = _CourtPlayer(player: player);
-    if (state != CourtState.pending) return slot;
+    if (state == CourtState.playing) {
+      return _buildScoreTapTarget(player);
+    }
+    return _buildDraggable(player);
+  }
 
+  Widget _buildScoreTapTarget(Player player) {
+    final slot = _CourtPlayer(player: player, avatarRadius: 24);
+    if (onPlayerScore == null) return slot;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => onPlayerScore!(player),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          child: slot,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDraggable(Player player) {
+    final slot = _CourtPlayer(player: player);
     final dragHandle = PlayerDragHandle(player: player, courtIndex: courtIndex);
     final feedback = Material(
       color: Colors.transparent,
@@ -207,16 +262,17 @@ class CourtCard extends StatelessWidget {
       );
     }
     // playing
+    final (a, b) = liveScore ?? (0, 0);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (liveScore != null) ...[
-          _buildLiveScoreBar(context, liveScore!),
+          _buildDecrementBar(context, a, b),
           const SizedBox(height: 8),
         ],
         FilledButton.tonalIcon(
           icon: const Icon(Icons.flag_outlined),
-          label: Text(liveScore != null ? '結束本場' : '結束本場並輸入比分'),
+          label: const Text('結束本場'),
           onPressed: onFinish,
         ),
         if (lastScore != null) ...[
@@ -227,105 +283,33 @@ class CourtCard extends StatelessWidget {
     );
   }
 
-  Widget _buildLiveScoreBar(BuildContext context, (int, int) score) {
-    final (a, b) = score;
+  /// 兩隊各一個「-1」按鈕，用於修正點錯的計分。
+  Widget _buildDecrementBar(BuildContext context, int a, int b) {
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: _buildTeamScoreCol(
-            context,
-            '隊 A',
-            a,
-            0,
-            players.sublist(0, 2),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-          child: Text(':', style: Theme.of(context).textTheme.headlineMedium),
-        ),
-        Expanded(
-          child: _buildTeamScoreCol(
-            context,
-            '隊 B',
-            b,
-            1,
-            players.sublist(2, 4),
-          ),
-        ),
+        Expanded(child: _buildDecrementBtn(context, '隊 A −1', 0, a)),
+        const SizedBox(width: 8),
+        Expanded(child: _buildDecrementBtn(context, '隊 B −1', 1, b)),
       ],
     );
   }
 
-  Widget _buildTeamScoreCol(
+  Widget _buildDecrementBtn(
     BuildContext context,
     String label,
-    int score,
     int team,
-    List<Player> teamPlayers,
+    int score,
   ) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(label, style: Theme.of(context).textTheme.labelMedium),
-        Text(
-          '$score',
-          style: Theme.of(
-            context,
-          ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700),
-        ),
-        Row(
-          children: [
-            for (int i = 0; i < teamPlayers.length; i++)
-              Expanded(
-                child: _buildPlayerScoreBtn(
-                  context,
-                  teamPlayers[i],
-                  team * 2 + i,
-                ),
-              ),
-          ],
-        ),
-        IconButton(
-          icon: const Icon(Icons.remove_circle_outline),
-          iconSize: 20,
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-          onPressed: score > 0 && onDecrementScore != null
-              ? () => onDecrementScore!(team)
-              : null,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildPlayerScoreBtn(
-    BuildContext context,
-    Player player,
-    int courtPlayerIndex,
-  ) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        PlayerAvatar(player: player, radius: 14),
-        Text(
-          player.name,
-          style: const TextStyle(fontSize: 11),
-          overflow: TextOverflow.ellipsis,
-          maxLines: 1,
-          textAlign: TextAlign.center,
-        ),
-        IconButton(
-          icon: const Icon(Icons.add_circle_outline),
-          iconSize: 24,
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-          onPressed: onPlayerScore != null
-              ? () => onPlayerScore!(courtPlayerIndex)
-              : null,
-        ),
-      ],
+    return OutlinedButton.icon(
+      icon: const Icon(Icons.remove_circle_outline, size: 18),
+      label: Text(label),
+      style: OutlinedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        visualDensity: VisualDensity.compact,
+      ),
+      onPressed: score > 0 && onDecrementScore != null
+          ? () => onDecrementScore!(team)
+          : null,
     );
   }
 
@@ -345,16 +329,17 @@ class CourtCard extends StatelessWidget {
 
 /// 顯示在球場上的單一玩家（頭像 + 名字）。
 class _CourtPlayer extends StatelessWidget {
-  const _CourtPlayer({required this.player});
+  const _CourtPlayer({required this.player, this.avatarRadius = 18});
 
   final Player player;
+  final double avatarRadius;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        PlayerAvatar(player: player, radius: 18),
+        PlayerAvatar(player: player, radius: avatarRadius),
         const SizedBox(height: 2),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),

@@ -28,7 +28,6 @@ class _ActivityEditScreenState extends State<ActivityEditScreen> {
   late Set<String> _selected;
   late int _preferredCourts;
   late bool _balanceByWinRate;
-  late bool _liveScoring;
 
   static const Map<int, int> _maxByCourts = {1: 8, 2: 14};
 
@@ -42,7 +41,6 @@ class _ActivityEditScreenState extends State<ActivityEditScreen> {
     _selected = (e?.rosterIds ?? []).toSet();
     _preferredCourts = e?.preferredCourts ?? 1;
     _balanceByWinRate = e?.balanceByWinRate ?? false;
-    _liveScoring = e?.liveScoring ?? false;
     widget.repository.addListener(_onChanged);
   }
 
@@ -91,8 +89,6 @@ class _ActivityEditScreenState extends State<ActivityEditScreen> {
                   _buildCourtSelector(selectedCount),
                   const SizedBox(height: 8),
                   _buildBalanceToggle(),
-                  const SizedBox(height: 4),
-                  _buildLiveScoringToggle(),
                   const SizedBox(height: 12),
                   _buildStatusBanner(selectedCount, resolvedCourts),
                   const SizedBox(height: 12),
@@ -197,16 +193,6 @@ class _ActivityEditScreenState extends State<ActivityEditScreen> {
       subtitle: const Text('依個人勝率自動調整隊伍搭配'),
       value: _balanceByWinRate,
       onChanged: (v) => setState(() => _balanceByWinRate = v),
-    );
-  }
-
-  Widget _buildLiveScoringToggle() {
-    return SwitchListTile(
-      contentPadding: EdgeInsets.zero,
-      title: const Text('實時計分'),
-      subtitle: const Text('比賽中即時加減分，結束時直接採用'),
-      value: _liveScoring,
-      onChanged: (v) => setState(() => _liveScoring = v),
     );
   }
 
@@ -383,7 +369,6 @@ class _ActivityEditScreenState extends State<ActivityEditScreen> {
       rosterIds: _selected.toList(),
       preferredCourts: _preferredCourts,
       balanceByWinRate: _balanceByWinRate,
-      liveScoring: _liveScoring,
     );
 
     final list = widget.repository.activities;

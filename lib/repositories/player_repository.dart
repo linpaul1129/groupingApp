@@ -20,7 +20,6 @@ class PlayerRepository extends ChangeNotifier {
   static const String _preferredCourtsKey = 'preferred_courts';
   static const String _rosterKey = 'active_roster_ids';
   static const String _balanceByWinRateKey = 'balance_by_win_rate';
-  static const String _liveScoringKey = 'live_scoring';
   static const String _activitiesKey = 'activities_v1';
   static const String _activeActivityIdKey = 'active_activity_id';
 
@@ -59,7 +58,6 @@ class PlayerRepository extends ChangeNotifier {
       rosterIds: existingRoster,
       preferredCourts: preferredCourts,
       balanceByWinRate: balanceByWinRate,
-      liveScoring: liveScoring,
     );
     await _writeActivities([defaultActivity]);
     await _metaBox.put(_activeActivityIdKey, defaultActivity.id);
@@ -146,14 +144,6 @@ class PlayerRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  bool get liveScoring =>
-      _metaBox.get(_liveScoringKey, defaultValue: false) as bool;
-
-  Future<void> setLiveScoring(bool value) async {
-    await _metaBox.put(_liveScoringKey, value);
-    notifyListeners();
-  }
-
   // ---- Activities --------------------------------------------------------
 
   List<Activity> get activities {
@@ -190,7 +180,6 @@ class PlayerRepository extends ChangeNotifier {
     await _metaBox.put(_rosterKey, activity.rosterIds);
     await _metaBox.put(_preferredCourtsKey, activity.preferredCourts);
     await _metaBox.put(_balanceByWinRateKey, activity.balanceByWinRate);
-    await _metaBox.put(_liveScoringKey, activity.liveScoring);
     notifyListeners();
   }
 

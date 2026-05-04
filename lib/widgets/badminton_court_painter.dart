@@ -90,31 +90,14 @@ class BadmintonCourtPainter extends CustomPainter {
       canvas.drawCircle(Offset(x, size.height / 2), 1.2, netDot);
     }
 
-    // 發球員站位指示圓
+    // 發球指示：在發球員站位畫羽毛球 emoji
     if (serveIndicator != null) {
       final si = serveIndicator!;
       final cx = si.serverAtRight ? size.width * 0.75 : size.width * 0.25;
       final cy = si.servingTeam == 0 ? size.height * 0.25 : size.height * 0.75;
 
-      final fillPaint = Paint()
-        ..color = Colors.yellow.withValues(alpha: 0.85)
-        ..style = PaintingStyle.fill;
-      final borderPaint = Paint()
-        ..color = Colors.orange
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2;
-      canvas.drawCircle(Offset(cx, cy), 10, fillPaint);
-      canvas.drawCircle(Offset(cx, cy), 10, borderPaint);
-
       final tp = TextPainter(
-        text: const TextSpan(
-          text: 'S',
-          style: TextStyle(
-            color: Colors.black87,
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+        text: const TextSpan(text: '🏸', style: TextStyle(fontSize: 22)),
         textDirection: TextDirection.ltr,
       )..layout();
       tp.paint(canvas, Offset(cx - tp.width / 2, cy - tp.height / 2));
