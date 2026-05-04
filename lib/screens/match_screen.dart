@@ -7,6 +7,7 @@ import '../models/court_state.dart';
 import '../models/player.dart';
 import '../repositories/player_repository.dart';
 import '../services/match_maker.dart';
+import '../widgets/centered_toast.dart';
 import '../widgets/court_card.dart';
 import '../widgets/player_chip.dart';
 import '../widgets/player_drag_handle.dart';
@@ -509,8 +510,10 @@ class _MatchScreenState extends State<MatchScreen> {
     switch (choice) {
       case _FinishChoice.useLive:
         if (a == b) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('比分相同，無法判定勝負，請繼續計分或改手動輸入')),
+          showCenteredToast(
+            context,
+            '比分相同，無法判定勝負，請繼續計分或改手動輸入',
+            kind: ToastKind.warning,
           );
           return;
         }
@@ -956,15 +959,11 @@ class _ScoreInputDialogState extends State<_ScoreInputDialog> {
     final a = int.tryParse(_aCtrl.text.trim());
     final b = int.tryParse(_bCtrl.text.trim());
     if (a == null || b == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('請輸入兩隊的比分')));
+      showCenteredToast(context, '請輸入兩隊的比分', kind: ToastKind.warning);
       return;
     }
     if (a == b) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('比分不可相同，請判定勝負')));
+      showCenteredToast(context, '比分不可相同，請判定勝負', kind: ToastKind.warning);
       return;
     }
     Navigator.pop(context, CourtScore(teamAScore: a, teamBScore: b));

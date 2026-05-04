@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/activity.dart';
 import '../repositories/player_repository.dart';
+import '../widgets/centered_toast.dart';
 import 'activity_edit_screen.dart';
 
 class SessionSetupScreen extends StatefulWidget {
@@ -34,75 +35,260 @@ class _SessionSetupScreenState extends State<SessionSetupScreen> {
     final activeId = widget.repository.activeActivityId;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('活動設定')),
+      appBar: AppBar(
+        title: const Text('活動設定'),
+        elevation: 0,
+        scrolledUnderElevation: 1,
+      ),
       body: activities.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.event_note_outlined,
-                    size: 64,
-                    color: Colors.grey.shade400,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    '尚未建立活動\n點擊右下角 + 新增',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodyLarge,
-                  ),
-                ],
-              ),
-            )
+          ? _buildEmptyState()
           : ListView.builder(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 96),
               itemCount: activities.length,
-              itemBuilder: (context, i) => _buildTile(activities[i], activeId),
+              itemBuilder: (context, i) => _buildCard(activities[i], activeId),
             ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: _openCreate,
-        tooltip: '新增活動',
-        child: const Icon(Icons.add),
+        icon: const Icon(Icons.add),
+        label: const Text('新增活動'),
       ),
     );
   }
 
-  Widget _buildTile(Activity activity, String? activeId) {
+  Widget _buildEmptyState() {
+    final scheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 96,
+              height: 96,
+              decoration: BoxDecoration(
+                color: scheme.primaryContainer.withValues(alpha: 0.5),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.event_note_outlined,
+                size: 52,
+                color: scheme.primary,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              '尚未建立活動',
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '點擊右下角「新增活動」開始',
+              textAlign: TextAlign.center,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCard(Activity activity, String? activeId) {
     final isActive = activity.id == activeId;
     final count = activity.rosterIds.length;
-    final tags = [
-      '${activity.preferredCourts} 場地',
-      if (activity.balanceByWinRate) '勝率平衡',
-    ].join('・');
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
 
-    return Dismissible(
-      key: ValueKey(activity.id),
-      direction: DismissDirection.endToStart,
-      confirmDismiss: (_) => _confirmDelete(activity),
-      onDismissed: (_) => _deleteActivity(activity),
-      background: Container(
-        color: Colors.red,
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 20),
-        child: const Icon(Icons.delete_outline, color: Colors.white),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Dismissible(
+        key: ValueKey(activity.id),
+        direction: DismissDirection.endToStart,
+        confirmDismiss: (_) => _confirmDelete(activity),
+        onDismissed: (_) => _deleteActivity(activity),
+        background: Container(
+          alignment: Alignment.centerRight,
+          padding: const EdgeInsets.only(right: 24),
+          decoration: BoxDecoration(
+            color: Colors.red.shade400,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.delete_outline, color: Colors.white),
+              SizedBox(width: 6),
+              Text(
+                '刪除',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+        child: Material(
+          color: isActive
+              ? scheme.primaryContainer.withValues(alpha: 0.45)
+              : scheme.surface,
+          borderRadius: BorderRadius.circular(16),
+          elevation: isActive ? 1 : 0,
+          shadowColor: scheme.primary.withValues(alpha: 0.3),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: () => _activate(activity),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(14, 14, 8, 14),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: isActive
+                      ? scheme.primary.withValues(alpha: 0.6)
+                      : scheme.outlineVariant,
+                  width: isActive ? 1.5 : 1,
+                ),
+              ),
+              child: Row(
+                children: [
+                  _buildLeading(isActive),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                activity.name,
+                                style: textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: isActive ? scheme.primary : null,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (isActive) ...[
+                              const SizedBox(width: 8),
+                              _buildActiveBadge(scheme),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: [
+                            _buildChip(
+                              icon: Icons.groups,
+                              label: '$count 人',
+                              scheme: scheme,
+                            ),
+                            _buildChip(
+                              icon: activity.preferredCourts == 1
+                                  ? Icons.looks_one_outlined
+                                  : Icons.looks_two_outlined,
+                              label: '${activity.preferredCourts} 場地',
+                              scheme: scheme,
+                            ),
+                            if (activity.balanceByWinRate)
+                              _buildChip(
+                                icon: Icons.balance,
+                                label: '勝率平衡',
+                                scheme: scheme,
+                                accent: true,
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.edit_outlined),
+                    tooltip: '編輯',
+                    onPressed: () => _openEdit(activity),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
-      child: ListTile(
-        leading: isActive
-            ? Icon(
-                Icons.check_circle,
-                color: Theme.of(context).colorScheme.primary,
-              )
-            : Icon(Icons.radio_button_unchecked, color: Colors.grey.shade400),
-        title: Text(
-          activity.name,
-          style: const TextStyle(fontWeight: FontWeight.w600),
+    );
+  }
+
+  Widget _buildLeading(bool isActive) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        color: isActive ? scheme.primary : scheme.surfaceContainerHighest,
+        shape: BoxShape.circle,
+      ),
+      child: Icon(
+        isActive ? Icons.check : Icons.event_note_outlined,
+        color: isActive ? Colors.white : scheme.onSurfaceVariant,
+        size: 22,
+      ),
+    );
+  }
+
+  Widget _buildActiveBadge(ColorScheme scheme) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: scheme.primary,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: const Text(
+        '使用中',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1,
         ),
-        subtitle: Text('$count 人・$tags'),
-        trailing: IconButton(
-          icon: const Icon(Icons.edit_outlined),
-          tooltip: '編輯',
-          onPressed: () => _openEdit(activity),
-        ),
-        onTap: () => _activate(activity),
+      ),
+    );
+  }
+
+  Widget _buildChip({
+    required IconData icon,
+    required String label,
+    required ColorScheme scheme,
+    bool accent = false,
+  }) {
+    final fg = accent ? scheme.primary : scheme.onSurfaceVariant;
+    final bg = accent
+        ? scheme.primary.withValues(alpha: 0.1)
+        : scheme.surfaceContainerHighest;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: fg),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: fg,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -139,9 +325,11 @@ class _SessionSetupScreenState extends State<SessionSetupScreen> {
   Future<void> _activate(Activity activity) async {
     await widget.repository.activateActivity(activity);
     if (!mounted) return;
-    ScaffoldMessenger.of(
+    showCenteredToast(
       context,
-    ).showSnackBar(SnackBar(content: Text('已切換至「${activity.name}」，可到比賽頁開始排場')));
+      '已切換至「${activity.name}」',
+      kind: ToastKind.success,
+    );
   }
 
   Future<void> _openCreate() async {
@@ -152,9 +340,7 @@ class _SessionSetupScreenState extends State<SessionSetupScreen> {
       ),
     );
     if (saved != null && mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('「$saved」已儲存')));
+      showCenteredToast(context, '「$saved」已儲存', kind: ToastKind.success);
     }
   }
 
@@ -169,9 +355,7 @@ class _SessionSetupScreenState extends State<SessionSetupScreen> {
       ),
     );
     if (saved != null && mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('「$saved」已更新')));
+      showCenteredToast(context, '「$saved」已更新', kind: ToastKind.success);
     }
   }
 }

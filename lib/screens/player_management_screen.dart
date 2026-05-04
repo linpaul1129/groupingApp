@@ -4,6 +4,7 @@ import '../models/player.dart';
 import '../models/player_type.dart';
 import '../repositories/player_repository.dart';
 import '../services/avatar_service.dart';
+import '../widgets/centered_toast.dart';
 import '../widgets/player_chip.dart';
 
 class PlayerManagementScreen extends StatefulWidget {
@@ -297,9 +298,7 @@ class _PlayerEditorDialogState extends State<_PlayerEditorDialog> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('選取圖片失敗：$e')));
+      showCenteredToast(context, '選取圖片失敗：$e', kind: ToastKind.warning);
     } finally {
       if (mounted) setState(() => _picking = false);
     }

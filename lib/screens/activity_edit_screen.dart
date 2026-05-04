@@ -5,6 +5,7 @@ import '../models/player.dart';
 import '../models/player_type.dart';
 import '../repositories/player_repository.dart';
 import '../services/match_maker.dart';
+import '../widgets/centered_toast.dart';
 import '../widgets/player_chip.dart';
 
 class ActivityEditScreen extends StatefulWidget {
@@ -63,11 +64,12 @@ class _ActivityEditScreenState extends State<ActivityEditScreen> {
       _preferredCourts,
     );
 
-    const double cardHeight = 100 / 0.72;
-    const double minGridHeight = cardHeight * 2.5;
-
     return Scaffold(
-      appBar: AppBar(title: Text(isEdit ? '編輯活動' : '新增活動')),
+      appBar: AppBar(
+        title: Text(isEdit ? '編輯活動' : '新增活動'),
+        elevation: 0,
+        scrolledUnderElevation: 1,
+      ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -77,157 +79,320 @@ class _ActivityEditScreenState extends State<ActivityEditScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  TextField(
-                    controller: _nameCtrl,
-                    decoration: const InputDecoration(
-                      labelText: '活動名稱',
-                      hintText: '例如：週三早場、週六午場',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  _buildCourtSelector(selectedCount),
-                  const SizedBox(height: 8),
-                  _buildBalanceToggle(),
-                  const SizedBox(height: 12),
+                  _buildBasicSection(),
+                  const SizedBox(height: 14),
+                  _buildSettingsSection(),
+                  const SizedBox(height: 14),
                   _buildStatusBanner(selectedCount, resolvedCourts),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          '選擇本次活動名單（已選 $selectedCount / $_maxPlayers）',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                      ),
-                      TextButton.icon(
-                        icon: const Icon(Icons.clear_all, size: 16),
-                        label: const Text('清空名單'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: Colors.red.shade400,
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        onPressed: _selected.isEmpty
-                            ? null
-                            : () => setState(() => _selected.clear()),
-                      ),
-                    ],
-                  ),
+                  const SizedBox(height: 16),
+                  _buildRosterHeader(selectedCount),
                   const SizedBox(height: 8),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(minHeight: minGridHeight),
-                    child: players.isEmpty
-                        ? const SizedBox(
-                            height: minGridHeight,
-                            child: Center(child: Text('請先到「玩家管理」新增玩家')),
-                          )
-                        : GridView.builder(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            gridDelegate:
-                                const SliverGridDelegateWithMaxCrossAxisExtent(
-                                  maxCrossAxisExtent: 100,
-                                  crossAxisSpacing: 8,
-                                  mainAxisSpacing: 8,
-                                  childAspectRatio: 0.72,
-                                ),
-                            itemCount: players.length,
-                            itemBuilder: (context, index) =>
-                                _buildPlayerCard(players[index]),
-                          ),
-                  ),
+                  _buildRosterGrid(players),
                 ],
               ),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: FilledButton.icon(
-              icon: const Icon(Icons.save),
-              onPressed: selectedCount > 0 ? _save : null,
-              label: const Text('儲存活動'),
-            ),
-          ),
+          _buildSaveBar(selectedCount),
         ],
       ),
     );
   }
 
-  Widget _buildCourtSelector(int selectedCount) {
-    final canPickOne = selectedCount <= (_maxByCourts[1] ?? 8);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text('場地數', style: Theme.of(context).textTheme.titleSmall),
-        const SizedBox(height: 6),
-        SizedBox(
-          width: double.infinity,
-          child: SegmentedButton<int>(
-            segments: [
-              ButtonSegment(
-                value: 1,
-                label: const Text('1 場地'),
-                icon: const Icon(Icons.looks_one_outlined),
-                enabled: canPickOne,
-              ),
-              const ButtonSegment(
-                value: 2,
-                label: Text('2 場地'),
-                icon: Icon(Icons.looks_two_outlined),
-              ),
-            ],
-            selected: {_preferredCourts},
-            onSelectionChanged: (s) =>
-                setState(() => _preferredCourts = s.first),
+  // ---- Sections ---------------------------------------------------------
+
+  Widget _buildBasicSection() {
+    return _SectionCard(
+      icon: Icons.edit_note,
+      title: '基本資訊',
+      child: TextField(
+        controller: _nameCtrl,
+        decoration: InputDecoration(
+          labelText: '活動名稱',
+          hintText: '例如：週三早場、週六午場',
+          prefixIcon: const Icon(Icons.label_outline),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(
+              color: Theme.of(context).colorScheme.outlineVariant,
+            ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSettingsSection() {
+    final scheme = Theme.of(context).colorScheme;
+    final selectedCount = _selected.length;
+    final canPickOne = selectedCount <= (_maxByCourts[1] ?? 8);
+    return _SectionCard(
+      icon: Icons.tune,
+      title: '比賽設定',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            '場地數',
+            style: Theme.of(
+              context,
+            ).textTheme.labelLarge?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<int>(
+              segments: [
+                ButtonSegment(
+                  value: 1,
+                  label: const Text('1 場地'),
+                  icon: const Icon(Icons.looks_one_outlined),
+                  enabled: canPickOne,
+                ),
+                const ButtonSegment(
+                  value: 2,
+                  label: Text('2 場地'),
+                  icon: Icon(Icons.looks_two_outlined),
+                ),
+              ],
+              selected: {_preferredCourts},
+              onSelectionChanged: (s) =>
+                  setState(() => _preferredCourts = s.first),
+            ),
+          ),
+          const SizedBox(height: 14),
+          _buildBalanceTile(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBalanceTile() {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => setState(() => _balanceByWinRate = !_balanceByWinRate),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: _balanceByWinRate
+              ? scheme.primaryContainer.withValues(alpha: 0.4)
+              : scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: _balanceByWinRate
+                ? scheme.primary.withValues(alpha: 0.5)
+                : scheme.outlineVariant,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.balance,
+              color: _balanceByWinRate
+                  ? scheme.primary
+                  : scheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '勝率平衡分組',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '依個人勝率自動調整隊伍搭配',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Switch(
+              value: _balanceByWinRate,
+              onChanged: (v) => setState(() => _balanceByWinRate = v),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRosterHeader(int selectedCount) {
+    return Row(
+      children: [
+        Icon(
+          Icons.groups,
+          size: 20,
+          color: Theme.of(context).colorScheme.primary,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            '本次活動名單',
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(
+            '$selectedCount / $_maxPlayers',
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: selectedCount > _maxPlayers
+                  ? Colors.red.shade600
+                  : Theme.of(context).colorScheme.primary,
+            ),
+          ),
+        ),
+        TextButton.icon(
+          icon: const Icon(Icons.clear_all, size: 16),
+          label: const Text('清空'),
+          style: TextButton.styleFrom(
+            foregroundColor: Colors.red.shade400,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            visualDensity: VisualDensity.compact,
+          ),
+          onPressed: _selected.isEmpty
+              ? null
+              : () => setState(() => _selected.clear()),
         ),
       ],
     );
   }
 
-  Widget _buildBalanceToggle() {
-    return SwitchListTile(
-      contentPadding: EdgeInsets.zero,
-      title: const Text('勝率平衡分組'),
-      subtitle: const Text('依個人勝率自動調整隊伍搭配'),
-      value: _balanceByWinRate,
-      onChanged: (v) => setState(() => _balanceByWinRate = v),
+  Widget _buildRosterGrid(List<Player> players) {
+    const double cardHeight = 100 / 0.72;
+    const double minGridHeight = cardHeight * 2.5;
+
+    if (players.isEmpty) {
+      return Container(
+        height: minGridHeight,
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        alignment: Alignment.center,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.person_off_outlined,
+              size: 40,
+              color: Colors.grey.shade400,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '請先到「玩家管理」新增玩家',
+              style: TextStyle(color: Colors.grey.shade600),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: minGridHeight),
+      child: GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 100,
+          crossAxisSpacing: 8,
+          mainAxisSpacing: 8,
+          childAspectRatio: 0.72,
+        ),
+        itemCount: players.length,
+        itemBuilder: (context, index) => _buildPlayerCard(players[index]),
+      ),
+    );
+  }
+
+  Widget _buildSaveBar(int selectedCount) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 8,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 52,
+          child: FilledButton.icon(
+            icon: const Icon(Icons.save),
+            onPressed: selectedCount > 0 ? _save : null,
+            label: const Text(
+              '儲存活動',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
   Widget _buildStatusBanner(int count, int resolvedCourts) {
     final Color bg;
+    final Color fg;
     final IconData icon;
     final String msg;
     if (count < 4) {
       bg = Colors.red.shade50;
+      fg = Colors.red.shade700;
       icon = Icons.error_outline;
       msg = '人數不足（$count 人），至少需 4 人才能開始';
     } else if (count > _maxPlayers) {
       bg = Colors.red.shade50;
+      fg = Colors.red.shade700;
       icon = Icons.error_outline;
       msg = '超過目前場地上限（$_preferredCourts 場地最多 $_maxPlayers 人）';
     } else if (count < 8) {
       bg = Colors.amber.shade50;
+      fg = Colors.amber.shade800;
       icon = Icons.info_outline;
       msg = '$count 人 → 使用 1 個場地（4 人同時上場）';
     } else {
       bg = Colors.green.shade50;
+      fg = Colors.green.shade700;
       icon = Icons.check_circle_outline;
       msg = '$count 人 → 使用 $resolvedCourts 個場地（${resolvedCourts * 4} 人同時上場）';
     }
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: fg.withValues(alpha: 0.3)),
       ),
       child: Row(
         children: [
-          Icon(icon),
-          const SizedBox(width: 8),
-          Expanded(child: Text(msg)),
+          Icon(icon, color: fg),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              msg,
+              style: TextStyle(color: fg, fontWeight: FontWeight.w600),
+            ),
+          ),
         ],
       ),
     );
@@ -355,9 +520,7 @@ class _ActivityEditScreenState extends State<ActivityEditScreen> {
   Future<void> _save() async {
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('請輸入活動名稱')));
+      showCenteredToast(context, '請輸入活動名稱', kind: ToastKind.warning);
       return;
     }
 
@@ -388,5 +551,58 @@ class _ActivityEditScreenState extends State<ActivityEditScreen> {
 
     if (!mounted) return;
     Navigator.pop(context, name);
+  }
+}
+
+/// 帶 icon + 標題的卡片區塊容器。
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({
+    required this.icon,
+    required this.title,
+    required this.child,
+  });
+
+  final IconData icon;
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: scheme.outlineVariant),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: scheme.primary),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: scheme.primary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          child,
+        ],
+      ),
+    );
   }
 }
