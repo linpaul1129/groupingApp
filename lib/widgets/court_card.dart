@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../models/court_score.dart';
@@ -6,12 +5,11 @@ import '../models/court_state.dart';
 import '../models/player.dart';
 import 'badminton_court_painter.dart';
 import 'player_chip.dart';
-import 'player_drag_handle.dart';
 
 /// 場地卡片：羽球場背景上上下分隊；依 [state] 顯示「開始比賽」或「結束本場」。
 ///
-/// pending 狀態時玩家是 `LongPressDraggable` 與 `DragTarget`，可直接和
-/// 等待區的玩家互換（由 [onSwap] 回呼給上層執行）。
+/// pending 狀態時玩家可被點擊；上層藉由 [onPlayerTap] 與 [selectedPlayerId]
+/// 實作「點 A → 點 B 互換」的兩段式選擇。
 /// playing 狀態時點擊隊伍半場 = 該隊得 1 分。
 class CourtCard extends StatelessWidget {
   const CourtCard({
@@ -26,7 +24,8 @@ class CourtCard extends StatelessWidget {
     this.liveScore,
     this.onTeamScore,
     this.onDecrementScore,
-    this.onSwap,
+    this.onPlayerTap,
+    this.selectedPlayerId,
     this.preview = false,
   }) : assert(players.length == 4, 'CourtCard 需要 4 位玩家');
 
@@ -50,9 +49,11 @@ class CourtCard extends StatelessWidget {
   /// 整隊扣 1 分（修正用）：team 0=隊A、1=隊B。
   final void Function(int team)? onDecrementScore;
 
-  /// 玩家拖拉互換：`from` 為被拖動的來源、`toPlayerOnThisCourt` 為本場被放上的玩家。
-  final void Function(PlayerDragHandle from, Player toPlayerOnThisCourt)?
-  onSwap;
+  /// pending 場地玩家被點擊（兩段選擇互換用）。
+  final void Function(Player player)? onPlayerTap;
+
+  /// 目前被選中的玩家 id（用於高亮）；null 代表無選擇。
+  final String? selectedPlayerId;
 
   /// 顯示為淡色預覽（目前流程沒用到；保留參數以便未來擴充）。
   final bool preview;
@@ -180,7 +181,7 @@ class CourtCard extends StatelessWidget {
     );
   }
 
-  /// 依 [state] 決定玩家是純顯示（playing）還是可拖拉（pending）。
+  /// 依 [state] 決定玩家是純顯示（playing）還是可點擊互換（pending）。
   Widget _wrapPlayer(Player player) {
     if (state == CourtState.playing) {
       return Padding(
@@ -188,51 +189,29 @@ class CourtCard extends StatelessWidget {
         child: _CourtPlayer(player: player, avatarRadius: 24),
       );
     }
-    return _buildDraggable(player);
+    return _buildSelectable(player);
   }
 
-  Widget _buildDraggable(Player player) {
+  Widget _buildSelectable(Player player) {
     final slot = _CourtPlayer(player: player);
-    final dragHandle = PlayerDragHandle(player: player, courtIndex: courtIndex);
-    final feedback = Material(
+    final isSelected = selectedPlayerId == player.id;
+    return Material(
       color: Colors.transparent,
-      child: Transform.scale(scale: 1.1, child: _CourtPlayer(player: player)),
-    );
-    final childWhenDragging = Opacity(opacity: 0.3, child: slot);
-    // Web 上滑鼠操作沒有「長按」概念，LongPressDraggable 會與 ListView 滾動搶
-    // 手勢導致拖不起來；native 則保留長按避免行動裝置誤觸。
-    final Widget draggable = kIsWeb
-        ? Draggable<PlayerDragHandle>(
-            data: dragHandle,
-            feedback: feedback,
-            childWhenDragging: childWhenDragging,
-            child: slot,
-          )
-        : LongPressDraggable<PlayerDragHandle>(
-            data: dragHandle,
-            delay: const Duration(milliseconds: 200),
-            feedback: feedback,
-            childWhenDragging: childWhenDragging,
-            child: slot,
-          );
-
-    return DragTarget<PlayerDragHandle>(
-      onWillAcceptWithDetails: (details) => details.data.player.id != player.id,
-      onAcceptWithDetails: (details) => onSwap?.call(details.data, player),
-      builder: (context, candidates, _) {
-        final highlighted = candidates.isNotEmpty;
-        return AnimatedContainer(
+      child: InkWell(
+        onTap: onPlayerTap == null ? null : () => onPlayerTap!(player),
+        borderRadius: BorderRadius.circular(8),
+        child: AnimatedContainer(
           duration: const Duration(milliseconds: 120),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(8),
-            border: highlighted
+            border: isSelected
                 ? Border.all(color: Colors.yellow.shade600, width: 2)
                 : null,
           ),
           padding: const EdgeInsets.all(2),
-          child: draggable,
-        );
-      },
+          child: slot,
+        ),
+      ),
     );
   }
 

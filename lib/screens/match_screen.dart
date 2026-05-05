@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -10,7 +9,6 @@ import '../services/match_maker.dart';
 import '../widgets/centered_toast.dart';
 import '../widgets/court_card.dart';
 import '../widgets/player_chip.dart';
-import '../widgets/player_drag_handle.dart';
 
 class MatchScreen extends StatefulWidget {
   const MatchScreen({super.key, required this.repository});
@@ -47,6 +45,9 @@ class _MatchScreenState extends State<MatchScreen> {
 
   /// 上一局的隊友關係：player id → 隊友 id。
   Map<String, String?> _lastTeammates = {};
+
+  /// 點擊互換的「已選玩家」：null 代表尚未選；courtIndex==null 代表來自等待區。
+  ({Player player, int? courtIndex})? _selected;
 
   bool get _started => _courts.isNotEmpty;
 
@@ -116,7 +117,7 @@ class _MatchScreenState extends State<MatchScreen> {
     final pendingCount = _states.where((s) => s == CourtState.pending).length;
     final msg = pendingCount == 0
         ? '所有場地進行中。結束比賽後會自動從等待區補人。'
-        : '有 $pendingCount 個場地待開始，可拖拉場上玩家與等待區互換。';
+        : '有 $pendingCount 個場地待開始，點擊兩位玩家可互換位置（含同隊、對手、等待區）。';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
@@ -214,8 +215,8 @@ class _MatchScreenState extends State<MatchScreen> {
       onDecrementScore: (team) => _decrementTeamScore(i, team),
       onStart: () => _startCourt(i),
       onFinish: () => _finishCourt(i),
-      onSwap: (from, toPlayer) =>
-          _handleSwap(from: from, targetCourtIndex: i, targetPlayer: toPlayer),
+      selectedPlayerId: _selected?.player.id,
+      onPlayerTap: (player) => _onPlayerTapForSwap(player, i),
     );
   }
 
@@ -231,62 +232,42 @@ class _MatchScreenState extends State<MatchScreen> {
         child: Text('（全員上場，無人等待）'),
       );
     }
-    final canDrag = _states.any((s) => s == CourtState.pending);
+    final selectable = _states.any((s) => s == CourtState.pending);
     return Padding(
       padding: const EdgeInsets.all(8),
       child: Wrap(
         spacing: 10,
         runSpacing: 10,
         children: [
-          for (final p in _waiting) _buildWaitingChip(p, canDrag: canDrag),
+          for (final p in _waiting)
+            _buildWaitingChip(p, selectable: selectable),
         ],
       ),
     );
   }
 
-  Widget _buildWaitingChip(Player p, {required bool canDrag}) {
+  Widget _buildWaitingChip(Player p, {required bool selectable}) {
     final card = PlayerStatCard(player: p);
-    if (!canDrag) return card;
+    if (!selectable) return card;
 
-    final handle = PlayerDragHandle(player: p, courtIndex: null);
-    final feedback = Material(color: Colors.transparent, child: card);
-    final childWhenDragging = Opacity(opacity: 0.3, child: card);
-    final Widget draggable = kIsWeb
-        ? Draggable<PlayerDragHandle>(
-            data: handle,
-            feedback: feedback,
-            childWhenDragging: childWhenDragging,
-            child: card,
-          )
-        : LongPressDraggable<PlayerDragHandle>(
-            data: handle,
-            delay: const Duration(milliseconds: 200),
-            feedback: feedback,
-            childWhenDragging: childWhenDragging,
-            child: card,
-          );
-    return DragTarget<PlayerDragHandle>(
-      onWillAcceptWithDetails: (details) =>
-          details.data.player.id != p.id && !details.data.fromWaiting,
-      onAcceptWithDetails: (details) => _handleSwap(
-        from: details.data,
-        targetCourtIndex: null,
-        targetPlayer: p,
-      ),
-      builder: (context, candidates, _) {
-        final highlighted = candidates.isNotEmpty;
-        return AnimatedContainer(
+    final isSelected = _selected?.player.id == p.id;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _onPlayerTapForSwap(p, null),
+        borderRadius: BorderRadius.circular(12),
+        child: AnimatedContainer(
           duration: const Duration(milliseconds: 120),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
-            border: highlighted
+            border: isSelected
                 ? Border.all(color: Colors.yellow.shade600, width: 2)
                 : null,
           ),
           padding: const EdgeInsets.all(1),
-          child: draggable,
-        );
-      },
+          child: card,
+        ),
+      ),
     );
   }
 
@@ -312,6 +293,7 @@ class _MatchScreenState extends State<MatchScreen> {
       _eventCounter = 0;
       _lastPlayedIds = {};
       _lastTeammates = {};
+      _selected = null;
     });
   }
 
@@ -319,6 +301,8 @@ class _MatchScreenState extends State<MatchScreen> {
     setState(() {
       _states[courtIndex] = CourtState.playing;
       _liveScores[courtIndex] = (0, 0);
+      // 場地進行中後選中的玩家不再可換，清掉選擇狀態。
+      if (_selected?.courtIndex == courtIndex) _selected = null;
     });
   }
 
@@ -346,13 +330,39 @@ class _MatchScreenState extends State<MatchScreen> {
     });
   }
 
-  /// 拖拉互換：把 [from]（場地或等待區玩家）與 [targetPlayer]（場地 / 等待區）對調。
-  void _handleSwap({
-    required PlayerDragHandle from,
-    required int? targetCourtIndex,
+  /// 點擊互換：第一次點選玩家、第二次點不同玩家 → 對調。
+  /// [courtIndex] null 代表來自等待區。
+  void _onPlayerTapForSwap(Player player, int? courtIndex) {
+    if (courtIndex != null && _states[courtIndex] != CourtState.pending) {
+      return;
+    }
+    if (_selected == null) {
+      setState(() => _selected = (player: player, courtIndex: courtIndex));
+      return;
+    }
+    if (_selected!.player.id == player.id) {
+      setState(() => _selected = null);
+      return;
+    }
+    final source = _selected!;
+    setState(() => _selected = null);
+    _swap(
+      sourcePlayer: source.player,
+      sourceCourtIndex: source.courtIndex,
+      targetPlayer: player,
+      targetCourtIndex: courtIndex,
+    );
+  }
+
+  /// 互換 source 與 target；任一端為等待區（courtIndex==null）或場上 pending 場地。
+  void _swap({
+    required Player sourcePlayer,
+    required int? sourceCourtIndex,
     required Player targetPlayer,
+    required int? targetCourtIndex,
   }) {
-    if (!from.fromWaiting && _states[from.courtIndex!] != CourtState.pending) {
+    if (sourceCourtIndex != null &&
+        _states[sourceCourtIndex] != CourtState.pending) {
       return;
     }
     if (targetCourtIndex != null &&
@@ -361,13 +371,12 @@ class _MatchScreenState extends State<MatchScreen> {
     }
 
     setState(() {
-      final sourcePlayer = from.player;
-      if (from.fromWaiting) {
+      if (sourceCourtIndex == null) {
         final i = _waiting.indexWhere((x) => x.id == sourcePlayer.id);
         if (i < 0) return;
         _waiting[i] = targetPlayer;
       } else {
-        final court = _courts[from.courtIndex!];
+        final court = _courts[sourceCourtIndex];
         final i = court.indexWhere((x) => x.id == sourcePlayer.id);
         if (i < 0) return;
         court[i] = targetPlayer;
@@ -486,6 +495,8 @@ class _MatchScreenState extends State<MatchScreen> {
       _liveScores[courtIndex] = (0, 0);
       _waiting = newWaiting;
       _lastPlayedIds = court.map((p) => p.id).toSet();
+      // 補人後玩家清單已變動，清掉選擇狀態避免操作到舊玩家。
+      _selected = null;
     });
   }
 
@@ -511,6 +522,7 @@ class _MatchScreenState extends State<MatchScreen> {
         _eventCounter = 0;
         _lastPlayedIds = {};
         _lastTeammates = {};
+        _selected = null;
       });
     }
   }

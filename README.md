@@ -41,9 +41,8 @@ lib/
   widgets/
     player_chip.dart             // 玩家徽章（顯示勝率）
     player_avatar.dart
-    court_card.dart              // 場地卡片；支援拖拉互換
+    court_card.dart              // 場地卡片；點擊玩家進行兩段式互換
     badminton_court_painter.dart
-    player_drag_handle.dart
 test/
   widget_test.dart               // MatchMaker 單元測試
 ```
@@ -153,7 +152,7 @@ List<Player> pickPlayers(
    - 比賽頁所有場地預設啟用實時計分。
 3. **比賽頁**（主畫面）：
    - 尚未開始：顯示名單與場地數，按「開始排場」生成第 1 輪。
-   - 進行中：顯示 Court 1 / 2（兩場地時左右並排）、等待區；可拖拉玩家互換位置。
+   - 進行中：顯示 Court 1 / 2（兩場地時左右並排）、等待區；待開始場地可點擊兩位玩家互換位置（場上同隊、對手、與等待區）。
    - 每場以實時計分累計，按「結束本場」採用目前比分；亦可按「手動輸入比分結束」改為彈窗輸入比分。
    - 結束後系統自動從候選池（剛下場 + 等待區）補滿 4 人。
    - 右上「重置」回到初始狀態。
@@ -196,4 +195,3 @@ UI 與邏輯都僅依賴 `PlayerRepository` 介面，後端切換可「換掉 re
 - 所有 Hive 操作在 `PlayerRepository` 內；UI 不直接引用 `hive`。
 - `MatchMaker` 的隨機性可注入（`MatchMaker(random: Random(seed))`），方便撰寫測試。
 - UI 使用 Material 3（`useMaterial3: true`）與 `NavigationBar`。
-- Flutter Web 上拖拉改用 `Draggable`（非 `LongPressDraggable`），避免與 `ListView` 滾動手勢衝突。
