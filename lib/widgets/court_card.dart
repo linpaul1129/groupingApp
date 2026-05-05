@@ -12,7 +12,7 @@ import 'player_drag_handle.dart';
 ///
 /// pending 狀態時玩家是 `LongPressDraggable` 與 `DragTarget`，可直接和
 /// 等待區的玩家互換（由 [onSwap] 回呼給上層執行）。
-/// playing 狀態時點擊玩家頭像 = 該玩家得 1 分。
+/// playing 狀態時點擊隊伍半場 = 該隊得 1 分。
 class CourtCard extends StatelessWidget {
   const CourtCard({
     super.key,
@@ -24,11 +24,8 @@ class CourtCard extends StatelessWidget {
     this.onStart,
     this.onFinish,
     this.liveScore,
-    this.onPlayerScore,
+    this.onTeamScore,
     this.onDecrementScore,
-    this.serveIndicator,
-    this.teamARight0 = false,
-    this.teamBRight0 = false,
     this.onSwap,
     this.preview = false,
   }) : assert(players.length == 4, 'CourtCard 需要 4 位玩家');
@@ -47,21 +44,11 @@ class CourtCard extends StatelessWidget {
   /// 實時比分（null 代表非實時模式）。
   final (int, int)? liveScore;
 
-  /// 點擊玩家得 1 分。
-  final void Function(Player player)? onPlayerScore;
+  /// 點擊隊伍半場：該隊得 1 分。team 0=隊A、1=隊B。
+  final void Function(int team)? onTeamScore;
 
   /// 整隊扣 1 分（修正用）：team 0=隊A、1=隊B。
   final void Function(int team)? onDecrementScore;
-
-  /// 發球員位置指示（null 代表不顯示）。
-  /// servingTeam: 0=隊A(上半場), 1=隊B(下半場)。serverAtRight: 偶數分站右。
-  final ({int servingTeam, bool serverAtRight})? serveIndicator;
-
-  /// A 隊 index 0 玩家是否站在右半場（影響 UI 左右排列）。
-  final bool teamARight0;
-
-  /// B 隊 index 0 玩家是否站在右半場。
-  final bool teamBRight0;
 
   /// 玩家拖拉互換：`from` 為被拖動的來源、`toPlayerOnThisCourt` 為本場被放上的玩家。
   final void Function(PlayerDragHandle from, Player toPlayerOnThisCourt)?
@@ -90,11 +77,7 @@ class CourtCard extends StatelessWidget {
               child: Opacity(
                 opacity: preview ? 0.55 : 1.0,
                 child: CustomPaint(
-                  painter: BadmintonCourtPainter(
-                    serveIndicator: state == CourtState.playing
-                        ? serveIndicator
-                        : null,
-                  ),
+                  painter: BadmintonCourtPainter(),
                   child: _buildPlayersLayer(teamA, teamB),
                 ),
               ),
@@ -162,19 +145,32 @@ class CourtCard extends StatelessWidget {
   }
 
   Widget _buildPlayersLayer(List<Player> teamA, List<Player> teamB) {
-    // 發球換邊：team[0] 在右半場時，視覺上排序要反轉（Row 第一個元素在左）。
-    final orderedA = teamARight0 ? [teamA[1], teamA[0]] : teamA;
-    final orderedB = teamBRight0 ? [teamB[1], teamB[0]] : teamB;
     return Padding(
       padding: const EdgeInsets.all(8),
       child: Column(
         children: [
-          Expanded(child: _teamRow(orderedA)),
+          Expanded(child: _halfCourt(teamA, 0)),
           const SizedBox(height: 2),
-          Expanded(child: _teamRow(orderedB)),
+          Expanded(child: _halfCourt(teamB, 1)),
         ],
       ),
     );
+  }
+
+  /// 半場：playing 時整片半場為 InkWell（點擊 +1 給該隊）。
+  Widget _halfCourt(List<Player> team, int teamIdx) {
+    final row = _teamRow(team);
+    if (state == CourtState.playing && onTeamScore != null) {
+      return Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => onTeamScore!(teamIdx),
+          borderRadius: BorderRadius.circular(8),
+          child: row,
+        ),
+      );
+    }
+    return row;
   }
 
   Widget _teamRow(List<Player> team) {
@@ -184,28 +180,15 @@ class CourtCard extends StatelessWidget {
     );
   }
 
-  /// 依 [state] 決定玩家是拖拉、還是點擊計分。
+  /// 依 [state] 決定玩家是純顯示（playing）還是可拖拉（pending）。
   Widget _wrapPlayer(Player player) {
     if (state == CourtState.playing) {
-      return _buildScoreTapTarget(player);
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        child: _CourtPlayer(player: player, avatarRadius: 24),
+      );
     }
     return _buildDraggable(player);
-  }
-
-  Widget _buildScoreTapTarget(Player player) {
-    final slot = _CourtPlayer(player: player, avatarRadius: 24);
-    if (onPlayerScore == null) return slot;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => onPlayerScore!(player),
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-          child: slot,
-        ),
-      ),
-    );
   }
 
   Widget _buildDraggable(Player player) {
