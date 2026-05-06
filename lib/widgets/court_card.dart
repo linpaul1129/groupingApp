@@ -129,9 +129,7 @@ class CourtCard extends StatelessWidget {
         const SizedBox(width: 8),
         Text(title, style: Theme.of(context).textTheme.titleMedium),
         Expanded(
-          child: showLive
-              ? Center(child: _buildLiveScoreInline(context, liveScore!))
-              : const SizedBox.shrink(),
+          child: const SizedBox.shrink(),
         ),
         _buildStatusBadge(context),
       ],
