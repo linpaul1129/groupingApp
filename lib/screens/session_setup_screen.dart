@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../models/activity.dart';
+import '../models/player.dart';
 import '../repositories/player_repository.dart';
 import '../widgets/centered_toast.dart';
+import '../widgets/player_chip.dart';
 import 'activity_edit_screen.dart';
 
 class SessionSetupScreen extends StatefulWidget {
@@ -102,6 +104,7 @@ class _SessionSetupScreenState extends State<SessionSetupScreen> {
     final count = activity.rosterIds.length;
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final rosterPlayers = _resolveRoster(activity);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
@@ -133,9 +136,7 @@ class _SessionSetupScreenState extends State<SessionSetupScreen> {
           ),
         ),
         child: Material(
-          color: isActive
-              ? scheme.primaryContainer.withValues(alpha: 0.45)
-              : scheme.surface,
+          color: isActive ? scheme.primaryContainer : scheme.surface,
           borderRadius: BorderRadius.circular(16),
           elevation: isActive ? 1 : 0,
           shadowColor: scheme.primary.withValues(alpha: 0.3),
@@ -147,13 +148,12 @@ class _SessionSetupScreenState extends State<SessionSetupScreen> {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: isActive
-                      ? scheme.primary.withValues(alpha: 0.6)
-                      : scheme.outlineVariant,
-                  width: isActive ? 1.5 : 1,
+                  color: isActive ? scheme.primary : scheme.outlineVariant,
+                  width: isActive ? 2 : 1,
                 ),
               ),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildLeading(isActive),
                   const SizedBox(width: 14),
@@ -180,6 +180,10 @@ class _SessionSetupScreenState extends State<SessionSetupScreen> {
                             ],
                           ],
                         ),
+                        if (rosterPlayers.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          _buildAvatarPreview(rosterPlayers, scheme),
+                        ],
                         const SizedBox(height: 8),
                         Wrap(
                           spacing: 6,
@@ -209,11 +213,7 @@ class _SessionSetupScreenState extends State<SessionSetupScreen> {
                       ],
                     ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.edit_outlined),
-                    tooltip: '編輯',
-                    onPressed: () => _openEdit(activity),
-                  ),
+                  _buildMenu(activity, isActive),
                 ],
               ),
             ),
@@ -221,6 +221,108 @@ class _SessionSetupScreenState extends State<SessionSetupScreen> {
         ),
       ),
     );
+  }
+
+  /// 由 rosterIds 對映到實際 Player（可能有 id 已被刪除，過濾掉 null）。
+  List<Player> _resolveRoster(Activity activity) {
+    final byId = {for (final p in widget.repository.allPlayers) p.id: p};
+    return [
+      for (final id in activity.rosterIds)
+        if (byId[id] != null) byId[id]!,
+    ];
+  }
+
+  /// 玩家頭像橫排預覽：最多 5 顆，超過顯示 +N 圓點。
+  Widget _buildAvatarPreview(List<Player> roster, ColorScheme scheme) {
+    const maxShown = 5;
+    final shown = roster.take(maxShown).toList();
+    final extra = roster.length - shown.length;
+    return SizedBox(
+      height: 28,
+      child: Row(
+        children: [
+          for (final p in shown) ...[
+            PlayerAvatar(player: p, radius: 14),
+            const SizedBox(width: 4),
+          ],
+          if (extra > 0)
+            Container(
+              width: 28,
+              height: 28,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: scheme.surfaceContainerHighest,
+              ),
+              child: Text(
+                '+$extra',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 三點選單：啟用（已啟用時隱藏）/ 編輯 / 刪除（紅）。
+  Widget _buildMenu(Activity activity, bool isActive) {
+    return PopupMenuButton<String>(
+      icon: const Icon(Icons.more_vert),
+      tooltip: '更多',
+      onSelected: (v) async {
+        switch (v) {
+          case 'activate':
+            await _activate(activity);
+          case 'edit':
+            await _openEdit(activity);
+          case 'delete':
+            await _menuDelete(activity);
+        }
+      },
+      itemBuilder: (ctx) => [
+        if (!isActive)
+          const PopupMenuItem(
+            value: 'activate',
+            child: Row(
+              children: [
+                Icon(Icons.check_circle_outline),
+                SizedBox(width: 12),
+                Text('啟用'),
+              ],
+            ),
+          ),
+        const PopupMenuItem(
+          value: 'edit',
+          child: Row(
+            children: [
+              Icon(Icons.edit_outlined),
+              SizedBox(width: 12),
+              Text('編輯'),
+            ],
+          ),
+        ),
+        const PopupMenuDivider(),
+        PopupMenuItem(
+          value: 'delete',
+          child: Row(
+            children: [
+              Icon(Icons.delete_outline, color: Colors.red.shade600),
+              const SizedBox(width: 12),
+              Text('刪除', style: TextStyle(color: Colors.red.shade600)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _menuDelete(Activity activity) async {
+    final ok = await _confirmDelete(activity);
+    if (ok == true) await _deleteActivity(activity);
   }
 
   Widget _buildLeading(bool isActive) {

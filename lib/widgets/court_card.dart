@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/court_score.dart';
@@ -5,6 +7,15 @@ import '../models/court_state.dart';
 import '../models/player.dart';
 import 'badminton_court_painter.dart';
 import 'player_chip.dart';
+
+/// 隊 A 半場 tint 顏色（10% alpha 淺靛藍）。
+const Color _kTeamATint = Color(0x1A3730A3);
+
+/// 隊 B 半場 tint 顏色（10% alpha 淺琥珀）。
+const Color _kTeamBTint = Color(0x1AF59E0B);
+
+/// 「我可被點」可互換玩家提示背景（20% alpha amber）。
+const Color _kSwapTargetTint = Color(0x33F59E0B);
 
 /// 場地卡片：羽球場背景上上下分隊；依 [state] 顯示「開始比賽」或「結束本場」。
 ///
@@ -77,9 +88,26 @@ class CourtCard extends StatelessWidget {
               aspectRatio: 16 / 11,
               child: Opacity(
                 opacity: preview ? 0.55 : 1.0,
-                child: CustomPaint(
-                  painter: BadmintonCourtPainter(),
-                  child: _buildPlayersLayer(teamA, teamB),
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: CustomPaint(
+                        painter: BadmintonCourtPainter(),
+                        child: _buildPlayersLayer(teamA, teamB),
+                      ),
+                    ),
+                    if (!preview &&
+                        state == CourtState.playing &&
+                        liveScore != null)
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: _LiveScoreOverlay(
+                            teamAScore: liveScore!.$1,
+                            teamBScore: liveScore!.$2,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ),
@@ -159,19 +187,32 @@ class CourtCard extends StatelessWidget {
   }
 
   /// 半場：playing 時整片半場為 InkWell（點擊 +1 給該隊）。
+  /// 隊 A 淺靛藍底、隊 B 淺琥珀底（10% alpha）以強化視覺分隊；
+  /// 玩家貼向外側邊緣，把球網附近的中央位置讓給大字分數。
   Widget _halfCourt(List<Player> team, int teamIdx) {
-    final row = _teamRow(team);
+    final isTeamA = teamIdx == 0;
+    final tinted = ColoredBox(
+      color: isTeamA ? _kTeamATint : _kTeamBTint,
+      child: Column(
+        mainAxisSize: MainAxisSize.max,
+        mainAxisAlignment: isTeamA
+            ? MainAxisAlignment.start
+            : MainAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [_teamRow(team)],
+      ),
+    );
     if (state == CourtState.playing && onTeamScore != null) {
       return Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: () => onTeamScore!(teamIdx),
           borderRadius: BorderRadius.circular(8),
-          child: row,
+          child: tinted,
         ),
       );
     }
-    return row;
+    return tinted;
   }
 
   Widget _teamRow(List<Player> team) {
@@ -193,25 +234,37 @@ class CourtCard extends StatelessWidget {
   }
 
   Widget _buildSelectable(Player player) {
-    final slot = _CourtPlayer(player: player);
-    final isSelected = selectedPlayerId == player.id;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onPlayerTap == null ? null : () => onPlayerTap!(player),
-        borderRadius: BorderRadius.circular(8),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          decoration: BoxDecoration(
+    return Builder(
+      builder: (context) {
+        final slot = _CourtPlayer(player: player);
+        final isSelected = selectedPlayerId == player.id;
+        final hasSelection = selectedPlayerId != null;
+        final isOtherSwappable = hasSelection && !isSelected;
+        final primaryColor = Theme.of(context).colorScheme.primary;
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onPlayerTap == null ? null : () => onPlayerTap!(player),
             borderRadius: BorderRadius.circular(8),
-            border: isSelected
-                ? Border.all(color: Colors.yellow.shade600, width: 2)
-                : null,
+            child: AnimatedScale(
+              scale: isSelected ? 1.05 : 1.0,
+              duration: const Duration(milliseconds: 120),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 120),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  color: isOtherSwappable ? _kSwapTargetTint : null,
+                  border: isSelected
+                      ? Border.all(color: primaryColor, width: 2)
+                      : null,
+                ),
+                padding: const EdgeInsets.all(2),
+                child: slot,
+              ),
+            ),
           ),
-          padding: const EdgeInsets.all(2),
-          child: slot,
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -285,6 +338,93 @@ class CourtCard extends StatelessWidget {
       '上一場：${s.teamAScore} : ${s.teamBScore}（$winner）',
       style: Theme.of(context).textTheme.bodySmall,
       textAlign: TextAlign.center,
+    );
+  }
+}
+
+/// 球場中央雙層分數疊圖：上半 = 隊 A、下半 = 隊 B；
+/// 領先方 primary 色，落後方灰色，得分時 1.15 倍 pop 動畫。
+class _LiveScoreOverlay extends StatelessWidget {
+  const _LiveScoreOverlay({required this.teamAScore, required this.teamBScore});
+
+  final int teamAScore;
+  final int teamBScore;
+
+  @override
+  Widget build(BuildContext context) {
+    final aLeading = teamAScore >= teamBScore;
+    final bLeading = teamBScore >= teamAScore;
+    return Column(
+      children: [
+        Expanded(
+          child: Center(
+            child: _AnimatedScore(score: teamAScore, leading: aLeading),
+          ),
+        ),
+        Expanded(
+          child: Center(
+            child: _AnimatedScore(score: teamBScore, leading: bLeading),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 單側分數：分數變化時觸發 1.0 → 1.15 → 1.0 的 pop 動畫。
+class _AnimatedScore extends StatefulWidget {
+  const _AnimatedScore({required this.score, required this.leading});
+
+  final int score;
+  final bool leading;
+
+  @override
+  State<_AnimatedScore> createState() => _AnimatedScoreState();
+}
+
+class _AnimatedScoreState extends State<_AnimatedScore> {
+  bool _justScored = false;
+  Timer? _timer;
+
+  @override
+  void didUpdateWidget(covariant _AnimatedScore oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.score != widget.score) {
+      _timer?.cancel();
+      setState(() => _justScored = true);
+      _timer = Timer(const Duration(milliseconds: 150), () {
+        if (mounted) setState(() => _justScored = false);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = widget.leading
+        ? Theme.of(context).colorScheme.primary
+        : Colors.grey.shade400;
+    return AnimatedScale(
+      scale: _justScored ? 1.15 : 1.0,
+      duration: const Duration(milliseconds: 150),
+      curve: Curves.easeOutBack,
+      child: Text(
+        '${widget.score}',
+        style: TextStyle(
+          fontSize: 56,
+          fontWeight: FontWeight.w900,
+          color: color,
+          height: 1.0,
+          shadows: const [
+            Shadow(blurRadius: 6, color: Colors.black54, offset: Offset(0, 1)),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -6,6 +6,7 @@ import '../models/court_state.dart';
 import '../models/player.dart';
 import '../repositories/player_repository.dart';
 import '../services/match_maker.dart';
+import '../utils/breakpoints.dart';
 import '../widgets/centered_toast.dart';
 import '../widgets/court_card.dart';
 import '../widgets/player_chip.dart';
@@ -80,6 +81,25 @@ class _MatchScreenState extends State<MatchScreen> {
     final roster = _loadRoster();
     final canStart = _matchMaker.canStart(roster.length);
 
+    Widget body = roster.isEmpty
+        ? _buildEmpty('尚未設定活動名單\n請先到「活動設定」頁選擇玩家')
+        : !canStart
+        ? _buildEmpty('名單僅 ${roster.length} 人，需至少 4 人才能開始')
+        : !_started
+        ? _buildReadyPanel(roster)
+        : _buildMatchPanel();
+
+    if (_started && _selected != null) {
+      body = Column(
+        children: [
+          _buildSelectionBanner(_selected!.player),
+          Expanded(child: body),
+        ],
+      );
+    }
+
+    final showBottomBar = !_started || _selected == null;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('比賽'),
@@ -91,25 +111,43 @@ class _MatchScreenState extends State<MatchScreen> {
           ),
         ],
       ),
-      body: roster.isEmpty
-          ? _buildEmpty('尚未設定活動名單\n請先到「活動設定」頁選擇玩家')
-          : !canStart
-          ? _buildEmpty('名單僅 ${roster.length} 人，需至少 4 人才能開始')
-          : !_started
-          ? _buildReadyPanel(roster)
-          : _buildMatchPanel(),
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: !_started
-              ? FilledButton.icon(
-                  onPressed: canStart ? _start : null,
-                  icon: const Icon(Icons.play_arrow),
-                  label: const Text('開始排場'),
-                )
-              : _buildHintBar(),
+      body: body,
+      bottomNavigationBar: showBottomBar
+          ? SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: !_started
+                    ? FilledButton.icon(
+                        onPressed: canStart ? _start : null,
+                        icon: const Icon(Icons.play_arrow),
+                        label: const Text('開始排場'),
+                      )
+                    : _buildHintBar(),
+              ),
+            )
+          : null,
+    );
+  }
+
+  /// 互換選中玩家後的頂部提示 banner（取代底部 hint bar 的選擇引導）。
+  Widget _buildSelectionBanner(Player selected) {
+    final cs = Theme.of(context).colorScheme;
+    return MaterialBanner(
+      backgroundColor: cs.primaryContainer,
+      leading: Icon(Icons.swap_horiz, color: cs.onPrimaryContainer),
+      content: Text(
+        '已選 ${selected.name}，點選另一位互換',
+        style: TextStyle(
+          color: cs.onPrimaryContainer,
+          fontWeight: FontWeight.w600,
         ),
       ),
+      actions: [
+        TextButton(
+          onPressed: () => setState(() => _selected = null),
+          child: const Text('取消'),
+        ),
+      ],
     );
   }
 
@@ -177,7 +215,8 @@ class _MatchScreenState extends State<MatchScreen> {
   Widget _buildMatchPanel() {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final sideBySide = _courts.length >= 2;
+        final sideBySide =
+            _courts.length >= 2 && !AppBreakpoints.isPhone(context);
         return ListView(
           padding: const EdgeInsets.all(12),
           children: [
@@ -233,39 +272,60 @@ class _MatchScreenState extends State<MatchScreen> {
       );
     }
     final selectable = _states.any((s) => s == CourtState.pending);
-    return Padding(
-      padding: const EdgeInsets.all(8),
-      child: Wrap(
-        spacing: 10,
-        runSpacing: 10,
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (final p in _waiting)
-            _buildWaitingChip(p, selectable: selectable),
+          for (var i = 0; i < _waiting.length; i++) ...[
+            if (i > 0) const SizedBox(width: 10),
+            _buildWaitingChip(_waiting[i], selectable: selectable),
+          ],
         ],
       ),
     );
   }
 
   Widget _buildWaitingChip(Player p, {required bool selectable}) {
-    final card = PlayerStatCard(player: p);
+    final hasWaitingPriority = p.waitingRounds >= 2;
+    Widget card = PlayerStatCard(player: p);
+    if (hasWaitingPriority) {
+      card = Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.amber.shade600, width: 2),
+        ),
+        child: card,
+      );
+    }
     if (!selectable) return card;
 
     final isSelected = _selected?.player.id == p.id;
+    final hasSelection = _selected != null;
+    final isOtherSwappable = hasSelection && !isSelected;
+    final primaryColor = Theme.of(context).colorScheme.primary;
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: () => _onPlayerTapForSwap(p, null),
         borderRadius: BorderRadius.circular(12),
-        child: AnimatedContainer(
+        child: AnimatedScale(
+          scale: isSelected ? 1.05 : 1.0,
           duration: const Duration(milliseconds: 120),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: isSelected
-                ? Border.all(color: Colors.yellow.shade600, width: 2)
-                : null,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              color: isOtherSwappable ? const Color(0x33F59E0B) : null,
+              border: isSelected
+                  ? Border.all(color: primaryColor, width: 2)
+                  : null,
+            ),
+            padding: const EdgeInsets.all(1),
+            child: card,
           ),
-          padding: const EdgeInsets.all(1),
-          child: card,
         ),
       ),
     );
@@ -392,6 +452,16 @@ class _MatchScreenState extends State<MatchScreen> {
         court[i] = sourcePlayer;
       }
     });
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('已互換 ${sourcePlayer.name} ↔ ${targetPlayer.name}'),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
   }
 
   /// 結束單一場地：詢問使用者採用目前實時比分或手動輸入。

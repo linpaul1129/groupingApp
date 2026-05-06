@@ -4,6 +4,7 @@ import '../models/player.dart';
 import '../models/player_type.dart';
 import '../repositories/player_repository.dart';
 import '../services/avatar_service.dart';
+import '../utils/breakpoints.dart';
 import '../widgets/centered_toast.dart';
 import '../widgets/player_chip.dart';
 
@@ -36,44 +37,60 @@ class _PlayerManagementScreenState extends State<PlayerManagementScreen> {
   @override
   Widget build(BuildContext context) {
     final players = widget.repository.allPlayers;
+    final isPhone = AppBreakpoints.isPhone(context);
+
     return Scaffold(
       appBar: AppBar(title: const Text('玩家管理')),
       body: players.isEmpty
           ? const Center(child: Text('尚未建立玩家，點右下角 + 新增'))
-          : ListView.separated(
-              itemCount: players.length,
-              separatorBuilder: (_, _) => const Divider(height: 1),
-              itemBuilder: (context, index) {
-                final p = players[index];
-                return ListTile(
-                  leading: PlayerAvatar(player: p, radius: 22),
-                  title: Text(p.name),
-                  subtitle: Text(
-                    '${p.type.label} · 累計 ${p.gamesPlayed} 場 · 勝 ${p.wins}',
-                  ),
-                  onTap: () => _showEditor(existing: p),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.edit_outlined),
-                        tooltip: '編輯',
-                        onPressed: () => _showEditor(existing: p),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete_outline),
-                        tooltip: '刪除',
-                        onPressed: () => _confirmDelete(p),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
+          : isPhone
+          ? _buildList(players)
+          : _buildGrid(players),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showEditor(),
         child: const Icon(Icons.add),
       ),
+    );
+  }
+
+  Widget _buildList(List<Player> players) {
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
+      itemCount: players.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        final p = players[index];
+        return _PlayerCard(
+          player: p,
+          mode: _PlayerCardMode.list,
+          onTap: () => _showEditor(existing: p),
+          onEdit: () => _showEditor(existing: p),
+          onDelete: () => _confirmDelete(p),
+        );
+      },
+    );
+  }
+
+  Widget _buildGrid(List<Player> players) {
+    return GridView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        mainAxisSpacing: 12,
+        crossAxisSpacing: 12,
+        mainAxisExtent: 200,
+      ),
+      itemCount: players.length,
+      itemBuilder: (context, index) {
+        final p = players[index];
+        return _PlayerCard(
+          player: p,
+          mode: _PlayerCardMode.grid,
+          onTap: () => _showEditor(existing: p),
+          onEdit: () => _showEditor(existing: p),
+          onDelete: () => _confirmDelete(p),
+        );
+      },
     );
   }
 
@@ -144,6 +161,198 @@ class _PlayerDraft {
   final String name;
   final PlayerType type;
   final String? avatarPath;
+}
+
+enum _PlayerCardMode { list, grid }
+
+/// 玩家卡片：outline border + Web hover 反白；右上角 ⋮ 編輯/刪除選單。
+class _PlayerCard extends StatefulWidget {
+  const _PlayerCard({
+    required this.player,
+    required this.mode,
+    required this.onTap,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  final Player player;
+  final _PlayerCardMode mode;
+  final VoidCallback onTap;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  @override
+  State<_PlayerCard> createState() => _PlayerCardState();
+}
+
+class _PlayerCardState extends State<_PlayerCard> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        decoration: BoxDecoration(
+          color: _hover ? cs.surfaceContainerHigh : cs.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: cs.outlineVariant),
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: widget.onTap,
+            borderRadius: BorderRadius.circular(16),
+            child: widget.mode == _PlayerCardMode.list
+                ? _buildListBody(context)
+                : _buildGridBody(context),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildListBody(BuildContext context) {
+    final p = widget.player;
+    final stats = p.gamesPlayed == 0
+        ? '0 場'
+        : '${p.gamesPlayed} 場 · 勝 ${(p.winRate * 100).toStringAsFixed(0)}%';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),
+      child: Row(
+        children: [
+          PlayerAvatar(player: p, radius: 24),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        p.name,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    _typeBadge(context, p.type),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(stats, style: Theme.of(context).textTheme.bodySmall),
+              ],
+            ),
+          ),
+          _menuButton(context),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGridBody(BuildContext context) {
+    final p = widget.player;
+    final stats = p.gamesPlayed == 0
+        ? '0 場'
+        : '勝 ${(p.winRate * 100).toStringAsFixed(0)}% · ${p.gamesPlayed} 場';
+    return Stack(
+      children: [
+        Positioned(top: 4, right: 4, child: _menuButton(context)),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              PlayerAvatar(player: p, radius: 32),
+              const SizedBox(height: 10),
+              Text(
+                p.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16,
+                ),
+              ),
+              const SizedBox(height: 4),
+              _typeBadge(context, p.type),
+              const SizedBox(height: 6),
+              Text(stats, style: Theme.of(context).textTheme.bodySmall),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _typeBadge(BuildContext context, PlayerType type) {
+    final isGuest = type == PlayerType.guest;
+    final color = isGuest
+        ? Colors.orange.shade700
+        : Theme.of(context).colorScheme.primary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.5)),
+      ),
+      child: Text(
+        type.label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
+      ),
+    );
+  }
+
+  Widget _menuButton(BuildContext context) {
+    return PopupMenuButton<String>(
+      icon: const Icon(Icons.more_vert),
+      tooltip: '更多',
+      onSelected: (v) {
+        switch (v) {
+          case 'edit':
+            widget.onEdit();
+          case 'delete':
+            widget.onDelete();
+        }
+      },
+      itemBuilder: (ctx) => [
+        const PopupMenuItem(
+          value: 'edit',
+          child: Row(
+            children: [
+              Icon(Icons.edit_outlined),
+              SizedBox(width: 12),
+              Text('編輯'),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'delete',
+          child: Row(
+            children: [
+              Icon(Icons.delete_outline, color: Colors.red.shade600),
+              const SizedBox(width: 12),
+              Text('刪除', style: TextStyle(color: Colors.red.shade600)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class _PlayerEditorDialog extends StatefulWidget {
