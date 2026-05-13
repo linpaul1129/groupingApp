@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/player.dart';
+import '../models/player_strength.dart';
 import '../models/player_type.dart';
 import '../repositories/player_repository.dart';
 import '../services/avatar_service.dart';
@@ -133,6 +134,7 @@ class _PlayerManagementScreenState extends State<PlayerManagementScreen> {
         name: result.name,
         type: result.type,
         avatarPath: result.avatarPath,
+        strength: result.strength,
       );
       await widget.repository.upsert(player);
     } else {
@@ -145,6 +147,7 @@ class _PlayerManagementScreenState extends State<PlayerManagementScreen> {
         name: result.name,
         type: result.type,
         avatarPath: result.avatarPath,
+        strength: result.strength,
       );
       await widget.repository.upsert(updated);
     }
@@ -156,11 +159,13 @@ class _PlayerDraft {
     required this.name,
     required this.type,
     required this.avatarPath,
+    required this.strength,
   });
 
   final String name;
   final PlayerType type;
   final String? avatarPath;
+  final PlayerStrength strength;
 }
 
 enum _PlayerCardMode { list, grid }
@@ -246,6 +251,8 @@ class _PlayerCardState extends State<_PlayerCard> {
                     ),
                     const SizedBox(width: 8),
                     _typeBadge(context, p.type),
+                    const SizedBox(width: 6),
+                    _strengthBadge(context, p.strength),
                   ],
                 ),
                 const SizedBox(height: 2),
@@ -284,7 +291,14 @@ class _PlayerCardState extends State<_PlayerCard> {
                 ),
               ),
               const SizedBox(height: 4),
-              _typeBadge(context, p.type),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _typeBadge(context, p.type),
+                  const SizedBox(width: 6),
+                  _strengthBadge(context, p.strength),
+                ],
+              ),
               const SizedBox(height: 6),
               Text(stats, style: Theme.of(context).textTheme.bodySmall),
             ],
@@ -311,6 +325,34 @@ class _PlayerCardState extends State<_PlayerCard> {
         style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w600,
+          color: color,
+        ),
+      ),
+    );
+  }
+
+  Widget _strengthBadge(BuildContext context, PlayerStrength strength) {
+    final Color color;
+    switch (strength) {
+      case PlayerStrength.strong:
+        color = Colors.red.shade600;
+      case PlayerStrength.medium:
+        color = Colors.blue.shade600;
+      case PlayerStrength.weak:
+        color = Colors.grey.shade600;
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.5)),
+      ),
+      child: Text(
+        strength.label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
           color: color,
         ),
       ),
@@ -368,6 +410,7 @@ class _PlayerEditorDialog extends StatefulWidget {
 class _PlayerEditorDialogState extends State<_PlayerEditorDialog> {
   late final TextEditingController _nameCtrl;
   late PlayerType _type;
+  late PlayerStrength _strength;
   String? _avatarPath;
   bool _picking = false;
 
@@ -377,6 +420,7 @@ class _PlayerEditorDialogState extends State<_PlayerEditorDialog> {
     final init = widget.initial;
     _nameCtrl = TextEditingController(text: init?.name ?? '');
     _type = init?.type ?? PlayerType.regular;
+    _strength = init?.strength ?? PlayerStrength.medium;
     _avatarPath = init?.avatarPath;
   }
 
@@ -419,6 +463,38 @@ class _PlayerEditorDialogState extends State<_PlayerEditorDialog> {
               ],
               selected: {_type},
               onSelectionChanged: (s) => setState(() => _type = s.first),
+            ),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '強度',
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            SegmentedButton<PlayerStrength>(
+              segments: const [
+                ButtonSegment(
+                  value: PlayerStrength.strong,
+                  label: Text('強'),
+                  icon: Icon(Icons.local_fire_department),
+                ),
+                ButtonSegment(
+                  value: PlayerStrength.medium,
+                  label: Text('中'),
+                  icon: Icon(Icons.adjust),
+                ),
+                ButtonSegment(
+                  value: PlayerStrength.weak,
+                  label: Text('弱'),
+                  icon: Icon(Icons.eco_outlined),
+                ),
+              ],
+              selected: {_strength},
+              onSelectionChanged: (s) => setState(() => _strength = s.first),
             ),
           ],
         ),
@@ -518,7 +594,12 @@ class _PlayerEditorDialogState extends State<_PlayerEditorDialog> {
     if (name.isEmpty) return;
     Navigator.pop(
       context,
-      _PlayerDraft(name: name, type: _type, avatarPath: _avatarPath),
+      _PlayerDraft(
+        name: name,
+        type: _type,
+        avatarPath: _avatarPath,
+        strength: _strength,
+      ),
     );
   }
 }

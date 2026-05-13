@@ -338,7 +338,6 @@ class _MatchScreenState extends State<MatchScreen> {
     final session = _matchMaker.startSession(
       roster: roster,
       preferredCourts: widget.repository.preferredCourts,
-      balanceByWinRate: widget.repository.balanceByWinRate,
     );
     await widget.repository.setCurrentRound(1);
     setState(() {
@@ -430,27 +429,21 @@ class _MatchScreenState extends State<MatchScreen> {
       return;
     }
 
+    // 先取兩端 index 再寫入；否則同一 list 上互換時，寫完 source 後
+    // indexWhere(target) 會命中剛被覆寫進去的同名玩家，造成互換被抵消。
+    final sourceList = sourceCourtIndex == null
+        ? _waiting
+        : _courts[sourceCourtIndex];
+    final targetList = targetCourtIndex == null
+        ? _waiting
+        : _courts[targetCourtIndex];
+    final sourceIdx = sourceList.indexWhere((x) => x.id == sourcePlayer.id);
+    final targetIdx = targetList.indexWhere((x) => x.id == targetPlayer.id);
+    if (sourceIdx < 0 || targetIdx < 0) return;
+
     setState(() {
-      if (sourceCourtIndex == null) {
-        final i = _waiting.indexWhere((x) => x.id == sourcePlayer.id);
-        if (i < 0) return;
-        _waiting[i] = targetPlayer;
-      } else {
-        final court = _courts[sourceCourtIndex];
-        final i = court.indexWhere((x) => x.id == sourcePlayer.id);
-        if (i < 0) return;
-        court[i] = targetPlayer;
-      }
-      if (targetCourtIndex == null) {
-        final i = _waiting.indexWhere((x) => x.id == targetPlayer.id);
-        if (i < 0) return;
-        _waiting[i] = sourcePlayer;
-      } else {
-        final court = _courts[targetCourtIndex];
-        final i = court.indexWhere((x) => x.id == targetPlayer.id);
-        if (i < 0) return;
-        court[i] = sourcePlayer;
-      }
+      sourceList[sourceIdx] = targetPlayer;
+      targetList[targetIdx] = sourcePlayer;
     });
 
     ScaffoldMessenger.of(context)
@@ -464,42 +457,30 @@ class _MatchScreenState extends State<MatchScreen> {
       );
   }
 
-  /// 結束單一場地：詢問使用者採用目前實時比分或手動輸入。
+  /// 結束單一場地：
+  /// - 任一方 ≥ 21 且不同分 → 直接採用實時比分。
+  /// - 否則 → 直接開手動輸入框。
   Future<void> _finishCourt(int courtIndex) async {
     final court = _courts[courtIndex];
     final (a, b) = _liveScores[courtIndex];
 
-    final choice = await showDialog<_FinishChoice>(
-      context: context,
-      builder: (ctx) => _FinishOptionsDialog(liveA: a, liveB: b),
-    );
-    if (choice == null || !mounted) return;
-
-    switch (choice) {
-      case _FinishChoice.useLive:
-        if (a == b) {
-          showCenteredToast(
-            context,
-            '比分相同，無法判定勝負，請繼續計分或改手動輸入',
-            kind: ToastKind.warning,
-          );
-          return;
-        }
-        await _applyFinish(
-          courtIndex,
-          CourtScore(teamAScore: a, teamBScore: b),
-        );
-      case _FinishChoice.manual:
-        final score = await showDialog<CourtScore>(
-          context: context,
-          builder: (ctx) => _ScoreInputDialog(
-            teamA: court.sublist(0, 2),
-            teamB: court.sublist(2, 4),
-          ),
-        );
-        if (score == null || !mounted) return;
-        await _applyFinish(courtIndex, score);
+    final reached21 = a >= 21 || b >= 21;
+    if (reached21 && a != b) {
+      await _applyFinish(courtIndex, CourtScore(teamAScore: a, teamBScore: b));
+      return;
     }
+
+    final score = await showDialog<CourtScore>(
+      context: context,
+      builder: (ctx) => _ScoreInputDialog(
+        teamA: court.sublist(0, 2),
+        teamB: court.sublist(2, 4),
+        initialA: a,
+        initialB: b,
+      ),
+    );
+    if (score == null || !mounted) return;
+    await _applyFinish(courtIndex, score);
   }
 
   /// 共用收尾：更新勝負、場次 → 從等待區補 4 人。
@@ -547,7 +528,6 @@ class _MatchScreenState extends State<MatchScreen> {
     final newPlaying = _matchMaker.pickPlayers(
       pool,
       4,
-      balanceByWinRate: widget.repository.balanceByWinRate,
       lastTeammates: _lastTeammates,
     );
     final newPlayingIds = newPlaying.map((p) => p.id).toSet();
@@ -599,60 +579,6 @@ class _MatchScreenState extends State<MatchScreen> {
 }
 
 // ---- Dialogs ---------------------------------------------------------------
-
-enum _FinishChoice { useLive, manual }
-
-/// 結束本場時詢問：使用目前實時比分，或另外手動輸入。
-class _FinishOptionsDialog extends StatelessWidget {
-  const _FinishOptionsDialog({required this.liveA, required this.liveB});
-
-  final int liveA;
-  final int liveB;
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    return AlertDialog(
-      title: const Text('結束本場'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text('目前實時比分', style: textTheme.labelLarge),
-          const SizedBox(height: 6),
-          Center(
-            child: Text(
-              '$liveA : $liveB',
-              style: textTheme.displaySmall?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            '要採用此比分，還是另外手動輸入？',
-            style: textTheme.bodyMedium,
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(context, _FinishChoice.manual),
-          child: const Text('手動輸入'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(context, _FinishChoice.useLive),
-          child: const Text('使用此比分'),
-        ),
-      ],
-    );
-  }
-}
 
 /// 今日比賽結束 dialog：顯示 MVP（勝率最高的玩家）並確認結束。
 class _EndOfDayDialog extends StatelessWidget {
@@ -740,18 +666,40 @@ class _EndOfDayDialog extends StatelessWidget {
 
 /// 比分輸入 dialog：顯示兩隊名單與兩個數字輸入框。
 class _ScoreInputDialog extends StatefulWidget {
-  const _ScoreInputDialog({required this.teamA, required this.teamB});
+  const _ScoreInputDialog({
+    required this.teamA,
+    required this.teamB,
+    this.initialA,
+    this.initialB,
+  });
 
   final List<Player> teamA;
   final List<Player> teamB;
+  final int? initialA;
+  final int? initialB;
 
   @override
   State<_ScoreInputDialog> createState() => _ScoreInputDialogState();
 }
 
 class _ScoreInputDialogState extends State<_ScoreInputDialog> {
-  final _aCtrl = TextEditingController();
-  final _bCtrl = TextEditingController();
+  late final TextEditingController _aCtrl;
+  late final TextEditingController _bCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _aCtrl = TextEditingController(
+      text: (widget.initialA != null && widget.initialA! > 0)
+          ? widget.initialA!.toString()
+          : '',
+    );
+    _bCtrl = TextEditingController(
+      text: (widget.initialB != null && widget.initialB! > 0)
+          ? widget.initialB!.toString()
+          : '',
+    );
+  }
 
   @override
   void dispose() {

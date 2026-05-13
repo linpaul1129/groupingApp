@@ -5,6 +5,7 @@ import '../models/player.dart';
 import '../models/player_type.dart';
 import '../repositories/player_repository.dart';
 import '../services/match_maker.dart';
+import '../utils/breakpoints.dart';
 import '../widgets/centered_toast.dart';
 import '../widgets/player_chip.dart';
 
@@ -26,11 +27,13 @@ class ActivityEditScreen extends StatefulWidget {
 
 class _ActivityEditScreenState extends State<ActivityEditScreen> {
   late TextEditingController _nameCtrl;
+  late TextEditingController _searchCtrl;
   late Set<String> _selected;
   late int _preferredCourts;
-  late bool _balanceByWinRate;
+  String _searchQuery = '';
 
   static const Map<int, int> _maxByCourts = {1: 8, 2: 14};
+  static const int _searchVisibleThreshold = 8;
 
   int get _maxPlayers => _maxByCourts[_preferredCourts] ?? 14;
 
@@ -39,20 +42,27 @@ class _ActivityEditScreenState extends State<ActivityEditScreen> {
     super.initState();
     final e = widget.existing;
     _nameCtrl = TextEditingController(text: e?.name ?? '');
+    _searchCtrl = TextEditingController();
     _selected = (e?.rosterIds ?? []).toSet();
     _preferredCourts = e?.preferredCourts ?? 1;
-    _balanceByWinRate = e?.balanceByWinRate ?? false;
     widget.repository.addListener(_onChanged);
   }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
+    _searchCtrl.dispose();
     widget.repository.removeListener(_onChanged);
     super.dispose();
   }
 
   void _onChanged() => setState(() {});
+
+  List<Player> _filteredPlayers(List<Player> players) {
+    if (_searchQuery.isEmpty) return players;
+    final q = _searchQuery.toLowerCase();
+    return players.where((p) => p.name.toLowerCase().contains(q)).toList();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -86,6 +96,10 @@ class _ActivityEditScreenState extends State<ActivityEditScreen> {
                   _buildStatusBanner(selectedCount, resolvedCourts),
                   const SizedBox(height: 16),
                   _buildRosterHeader(selectedCount),
+                  if (players.length > _searchVisibleThreshold) ...[
+                    const SizedBox(height: 8),
+                    _buildSearchField(),
+                  ],
                   const SizedBox(height: 8),
                   _buildRosterGrid(players),
                 ],
@@ -160,66 +174,7 @@ class _ActivityEditScreenState extends State<ActivityEditScreen> {
                   setState(() => _preferredCourts = s.first),
             ),
           ),
-          const SizedBox(height: 14),
-          _buildBalanceTile(),
         ],
-      ),
-    );
-  }
-
-  Widget _buildBalanceTile() {
-    final scheme = Theme.of(context).colorScheme;
-    return InkWell(
-      borderRadius: BorderRadius.circular(12),
-      onTap: () => setState(() => _balanceByWinRate = !_balanceByWinRate),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: _balanceByWinRate
-              ? scheme.primaryContainer.withValues(alpha: 0.4)
-              : scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: _balanceByWinRate
-                ? scheme.primary.withValues(alpha: 0.5)
-                : scheme.outlineVariant,
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              Icons.balance,
-              color: _balanceByWinRate
-                  ? scheme.primary
-                  : scheme.onSurfaceVariant,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '勝率平衡分組',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '依個人勝率自動調整隊伍搭配',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Switch(
-              value: _balanceByWinRate,
-              onChanged: (v) => setState(() => _balanceByWinRate = v),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -274,49 +229,110 @@ class _ActivityEditScreenState extends State<ActivityEditScreen> {
   }
 
   Widget _buildRosterGrid(List<Player> players) {
-    const double cardHeight = 100 / 0.72;
-    const double minGridHeight = cardHeight * 2.5;
+    final isWide = AppBreakpoints.isWide(context);
+    final isPhone = AppBreakpoints.isPhone(context);
+    final maxExtent = isPhone ? 100.0 : 130.0;
+    const double aspectRatio = 0.72;
+    final double cardHeight = maxExtent / aspectRatio;
+    final double minGridHeight = cardHeight * 2.5;
 
     if (players.isEmpty) {
-      return Container(
+      return _buildRosterEmpty(
         height: minGridHeight,
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        alignment: Alignment.center,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.person_off_outlined,
-              size: 40,
-              color: Colors.grey.shade400,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '請先到「玩家管理」新增玩家',
-              style: TextStyle(color: Colors.grey.shade600),
-            ),
-          ],
+        icon: Icons.person_off_outlined,
+        message: '請先到「玩家管理」新增玩家',
+      );
+    }
+
+    final filtered = _filteredPlayers(players);
+    if (filtered.isEmpty) {
+      return _buildRosterEmpty(
+        height: minGridHeight,
+        icon: Icons.search_off,
+        message: '查無「$_searchQuery」對應玩家',
+      );
+    }
+
+    if (isWide) {
+      return ConstrainedBox(
+        constraints: BoxConstraints(minHeight: minGridHeight),
+        child: ListView.separated(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: filtered.length,
+          separatorBuilder: (_, _) => const SizedBox(height: 6),
+          itemBuilder: (context, index) =>
+              _buildPlayerListTile(filtered[index]),
         ),
       );
     }
 
     return ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: minGridHeight),
+      constraints: BoxConstraints(minHeight: minGridHeight),
       child: GridView.builder(
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
-        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 100,
+        gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: maxExtent,
           crossAxisSpacing: 8,
           mainAxisSpacing: 8,
-          childAspectRatio: 0.72,
+          childAspectRatio: aspectRatio,
         ),
-        itemCount: players.length,
-        itemBuilder: (context, index) => _buildPlayerCard(players[index]),
+        itemCount: filtered.length,
+        itemBuilder: (context, index) => _buildPlayerCard(filtered[index]),
       ),
+    );
+  }
+
+  Widget _buildRosterEmpty({
+    required double height,
+    required IconData icon,
+    required String message,
+  }) {
+    return Container(
+      height: height,
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      alignment: Alignment.center,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 40, color: Colors.grey.shade400),
+          const SizedBox(height: 8),
+          Text(message, style: TextStyle(color: Colors.grey.shade600)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchField() {
+    final scheme = Theme.of(context).colorScheme;
+    return TextField(
+      controller: _searchCtrl,
+      textInputAction: TextInputAction.search,
+      decoration: InputDecoration(
+        hintText: '搜尋玩家',
+        prefixIcon: const Icon(Icons.search),
+        suffixIcon: _searchQuery.isEmpty
+            ? null
+            : IconButton(
+                icon: const Icon(Icons.close),
+                tooltip: '清除',
+                onPressed: () {
+                  _searchCtrl.clear();
+                  setState(() => _searchQuery = '');
+                },
+              ),
+        isDense: true,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: scheme.outlineVariant),
+        ),
+      ),
+      onChanged: (v) => setState(() => _searchQuery = v.trim()),
     );
   }
 
@@ -517,6 +533,107 @@ class _ActivityEditScreenState extends State<ActivityEditScreen> {
     );
   }
 
+  /// 寬螢幕（≥ 900px）使用的 ListView item：CheckboxListTile，
+  /// 預設即支援 Tab 切換焦點與 Enter/Space 觸發。
+  Widget _buildPlayerListTile(Player p) {
+    final scheme = Theme.of(context).colorScheme;
+    final selected = _selected.contains(p.id);
+    final reachedCap = _selected.length >= _maxPlayers && !selected;
+    final isGuest = p.type == PlayerType.guest;
+    final primaryColor = isGuest ? Colors.orange : scheme.primary;
+
+    final Color borderColor;
+    final Color bgColor;
+    if (reachedCap) {
+      borderColor = Colors.grey.shade300;
+      bgColor = Colors.grey.shade100;
+    } else if (selected) {
+      borderColor = primaryColor;
+      bgColor = primaryColor.withValues(alpha: 0.10);
+    } else {
+      borderColor = scheme.outlineVariant;
+      bgColor = scheme.surface;
+    }
+
+    final winRateText = p.gamesPlayed == 0
+        ? '尚未上場'
+        : '${p.gamesPlayed} 場 · 勝 ${(p.winRate * 100).toStringAsFixed(0)}%';
+
+    return Opacity(
+      opacity: reachedCap ? 0.5 : 1.0,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: borderColor, width: selected ? 2 : 1),
+        ),
+        child: CheckboxListTile(
+          value: selected,
+          onChanged: reachedCap
+              ? null
+              : (v) => setState(() {
+                  if (v == true) {
+                    _selected.add(p.id);
+                  } else {
+                    _selected.remove(p.id);
+                  }
+                }),
+          controlAffinity: ListTileControlAffinity.trailing,
+          activeColor: primaryColor,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          secondary: PlayerAvatar(player: p, radius: 22),
+          title: Row(
+            children: [
+              Flexible(
+                child: Text(
+                  p.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: selected ? primaryColor : scheme.onSurface,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: isGuest
+                      ? Colors.orange.shade50
+                      : scheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: isGuest
+                        ? Colors.orange.shade300
+                        : scheme.outlineVariant,
+                  ),
+                ),
+                child: Text(
+                  isGuest ? '零打' : '固定',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: isGuest
+                        ? Colors.orange.shade800
+                        : scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          subtitle: Text(
+            winRateText,
+            style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _save() async {
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) {
@@ -531,7 +648,6 @@ class _ActivityEditScreenState extends State<ActivityEditScreen> {
       name: name,
       rosterIds: _selected.toList(),
       preferredCourts: _preferredCourts,
-      balanceByWinRate: _balanceByWinRate,
     );
 
     final list = widget.repository.activities;

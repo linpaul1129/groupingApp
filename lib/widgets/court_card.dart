@@ -122,33 +122,14 @@ class CourtCard extends StatelessWidget {
   }
 
   Widget _buildHeader(BuildContext context) {
-    final showLive = state == CourtState.playing && liveScore != null;
     return Row(
       children: [
         Icon(Icons.sports_tennis, color: Theme.of(context).colorScheme.primary),
         const SizedBox(width: 8),
         Text(title, style: Theme.of(context).textTheme.titleMedium),
-        Expanded(
-          child: const SizedBox.shrink(),
-        ),
+        Expanded(child: const SizedBox.shrink()),
         _buildStatusBadge(context),
       ],
-    );
-  }
-
-  Widget _buildLiveScoreInline(BuildContext context, (int, int) score) {
-    final (a, b) = score;
-    final style = Theme.of(context).textTheme.headlineSmall?.copyWith(
-      fontWeight: FontWeight.w800,
-      letterSpacing: 1,
-    );
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Text('$a : $b', style: style),
     );
   }
 
@@ -404,9 +385,11 @@ class _AnimatedScoreState extends State<_AnimatedScore> {
 
   @override
   Widget build(BuildContext context) {
+    // 球場為深綠色 + 隊伍半場 tint，主題 primary（靛藍）與場地對比不足；
+    // 領先方改用高亮琥珀（設計 token 指定的計分高亮色），落後方改用白色。
     final color = widget.leading
-        ? Theme.of(context).colorScheme.primary
-        : Colors.grey.shade400;
+        ? const Color(0xFFFFD54F)
+        : Colors.white.withValues(alpha: 0.85);
     return AnimatedScale(
       scale: _justScored ? 1.15 : 1.0,
       duration: const Duration(milliseconds: 150),
@@ -419,7 +402,8 @@ class _AnimatedScoreState extends State<_AnimatedScore> {
           color: color,
           height: 1.0,
           shadows: const [
-            Shadow(blurRadius: 6, color: Colors.black54, offset: Offset(0, 1)),
+            Shadow(blurRadius: 4, color: Colors.black, offset: Offset(0, 0)),
+            Shadow(blurRadius: 10, color: Colors.black87, offset: Offset(0, 2)),
           ],
         ),
       ),

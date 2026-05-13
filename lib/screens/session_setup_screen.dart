@@ -201,13 +201,6 @@ class _SessionSetupScreenState extends State<SessionSetupScreen> {
                               label: '${activity.preferredCourts} 場地',
                               scheme: scheme,
                             ),
-                            if (activity.balanceByWinRate)
-                              _buildChip(
-                                icon: Icons.balance,
-                                label: '勝率平衡',
-                                scheme: scheme,
-                                accent: true,
-                              ),
                           ],
                         ),
                       ],
@@ -365,12 +358,9 @@ class _SessionSetupScreenState extends State<SessionSetupScreen> {
     required IconData icon,
     required String label,
     required ColorScheme scheme,
-    bool accent = false,
   }) {
-    final fg = accent ? scheme.primary : scheme.onSurfaceVariant;
-    final bg = accent
-        ? scheme.primary.withValues(alpha: 0.1)
-        : scheme.surfaceContainerHighest;
+    final fg = scheme.onSurfaceVariant;
+    final bg = scheme.surfaceContainerHighest;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(

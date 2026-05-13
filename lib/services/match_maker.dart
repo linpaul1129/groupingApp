@@ -39,20 +39,18 @@ class MatchMaker {
   ///
   /// 公開版本：供 [MatchScreen] 在「每場結束即補人」的流程中直接呼叫。
   ///
-  /// 若 [balanceByWinRate] 為 true 且 [needed] 為 4 的倍數，會在選完後
-  /// 將每 4 人依勝率重排成 `[隊A a0, 隊A a1, 隊B b0, 隊B b1]` 的順序。
+  /// 若 [needed] 為 4 的倍數，會在選完後將每 4 人依勝率重排成
+  /// `[隊A a0, 隊A a1, 隊B b0, 隊B b1]` 的順序。
   ///
   /// [lastTeammates] 提供上一局的隊友關係（player id → 隊友 id），用於
-  /// 避免同一組合重複出現；即使 [balanceByWinRate] 為 false 也會套用。
+  /// 避免同一組合重複出現。
   List<Player> pickPlayers(
     List<Player> candidates,
     int needed, {
-    bool balanceByWinRate = false,
     Map<String, String?> lastTeammates = const {},
   }) {
     final picked = _pickPlayers(candidates, needed);
     if (needed == 0 || needed % playersPerCourt != 0) return picked;
-    if (!balanceByWinRate && lastTeammates.isEmpty) return picked;
     return _rebalanceCourts(
       picked,
       needed ~/ playersPerCourt,
@@ -68,7 +66,6 @@ class MatchMaker {
   ({List<List<Player>> courts, List<Player> waiting}) startSession({
     required List<Player> roster,
     required int preferredCourts,
-    bool balanceByWinRate = false,
   }) {
     final courtsCount = resolvedCourts(roster.length, preferredCourts);
     if (courtsCount == 0) {
@@ -76,9 +73,7 @@ class MatchMaker {
     }
     final needed = courtsCount * playersPerCourt;
     final picked = _pickPlayers(roster, needed);
-    final arranged = balanceByWinRate
-        ? _rebalanceCourts(picked, courtsCount)
-        : picked;
+    final arranged = _rebalanceCourts(picked, courtsCount);
     final courts = _splitIntoCourts(arranged, courtsCount);
     final pickedIds = picked.map((p) => p.id).toSet();
     final waiting = roster

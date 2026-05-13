@@ -1,5 +1,6 @@
 import 'package:hive/hive.dart';
 
+import 'player_strength.dart';
 import 'player_type.dart';
 
 /// 玩家資料模型。
@@ -20,6 +21,7 @@ class Player {
     this.notes = '',
     this.avatarPath,
     this.points = 0,
+    this.strength = PlayerStrength.medium,
   });
 
   final String id;
@@ -50,6 +52,9 @@ class Player {
   /// 累計個人得分（field index 10）。
   int points;
 
+  /// 玩家強度分級（強/中/弱），預設為中（field index 11）。
+  PlayerStrength strength;
+
   /// 勝率（0.0 ~ 1.0）；尚未上場時為 0。
   double get winRate => gamesPlayed == 0 ? 0.0 : wins / gamesPlayed;
 
@@ -64,6 +69,7 @@ class Player {
     String? notes,
     Object? avatarPath = _sentinel,
     int? points,
+    PlayerStrength? strength,
   }) {
     return Player(
       id: id,
@@ -79,6 +85,7 @@ class Player {
           ? this.avatarPath
           : avatarPath as String?,
       points: points ?? this.points,
+      strength: strength ?? this.strength,
     );
   }
 
@@ -115,13 +122,14 @@ class PlayerAdapter extends TypeAdapter<Player> {
       notes: fields[8] as String? ?? '',
       avatarPath: fields[9] as String?,
       points: fields[10] as int? ?? 0,
+      strength: fields[11] as PlayerStrength? ?? PlayerStrength.medium,
     );
   }
 
   @override
   void write(BinaryWriter writer, Player obj) {
     writer
-      ..writeByte(11)
+      ..writeByte(12)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -143,6 +151,8 @@ class PlayerAdapter extends TypeAdapter<Player> {
       ..writeByte(9)
       ..write(obj.avatarPath)
       ..writeByte(10)
-      ..write(obj.points);
+      ..write(obj.points)
+      ..writeByte(11)
+      ..write(obj.strength);
   }
 }

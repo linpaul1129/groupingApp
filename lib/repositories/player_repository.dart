@@ -5,6 +5,7 @@ import 'package:hive/hive.dart';
 
 import '../models/activity.dart';
 import '../models/player.dart';
+import '../models/player_strength.dart';
 import '../models/player_type.dart';
 
 /// 玩家資料 Repository：把 Hive 的細節都藏在這一層，
@@ -19,7 +20,6 @@ class PlayerRepository extends ChangeNotifier {
   static const String _currentRoundKey = 'current_round';
   static const String _preferredCourtsKey = 'preferred_courts';
   static const String _rosterKey = 'active_roster_ids';
-  static const String _balanceByWinRateKey = 'balance_by_win_rate';
   static const String _activitiesKey = 'activities_v1';
   static const String _activeActivityIdKey = 'active_activity_id';
 
@@ -33,6 +33,9 @@ class PlayerRepository extends ChangeNotifier {
     }
     if (!Hive.isAdapterRegistered(1)) {
       Hive.registerAdapter(PlayerAdapter());
+    }
+    if (!Hive.isAdapterRegistered(2)) {
+      Hive.registerAdapter(PlayerStrengthAdapter());
     }
   }
 
@@ -57,7 +60,6 @@ class PlayerRepository extends ChangeNotifier {
       name: '預設活動',
       rosterIds: existingRoster,
       preferredCourts: preferredCourts,
-      balanceByWinRate: balanceByWinRate,
     );
     await _writeActivities([defaultActivity]);
     await _metaBox.put(_activeActivityIdKey, defaultActivity.id);
@@ -135,15 +137,6 @@ class PlayerRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 是否啟用「勝率平衡分組」。
-  bool get balanceByWinRate =>
-      _metaBox.get(_balanceByWinRateKey, defaultValue: false) as bool;
-
-  Future<void> setBalanceByWinRate(bool value) async {
-    await _metaBox.put(_balanceByWinRateKey, value);
-    notifyListeners();
-  }
-
   // ---- Activities --------------------------------------------------------
 
   List<Activity> get activities {
@@ -179,7 +172,6 @@ class PlayerRepository extends ChangeNotifier {
     await _metaBox.put(_activeActivityIdKey, activity.id);
     await _metaBox.put(_rosterKey, activity.rosterIds);
     await _metaBox.put(_preferredCourtsKey, activity.preferredCourts);
-    await _metaBox.put(_balanceByWinRateKey, activity.balanceByWinRate);
     notifyListeners();
   }
 
